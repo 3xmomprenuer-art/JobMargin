@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { sql } from "~/db";
@@ -181,6 +181,7 @@ function formatDate(d: string): string {
 function EstimateDetailPage() {
   const estimate = Route.useLoaderData();
   const navigate = useNavigate();
+  const router = useRouter();
 
   if (!estimate) {
     return (
@@ -215,8 +216,8 @@ function EstimateDetailPage() {
       await updateStatus({
         data: { estimateId: estimate.id, status: newStatus },
       });
-      // Reload the page to reflect new status
-      window.location.reload();
+      // Re-fetch data without full page reload
+      router.invalidate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");
     } finally {

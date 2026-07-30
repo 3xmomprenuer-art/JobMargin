@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { sql } from "~/db";
@@ -28,6 +28,7 @@ interface JobDetail {
   id: string;
   job_number: string;
   status: string;
+  labor_rate: number | null;
   estimated_total: number | null;
   actual_materials_cost: number;
   actual_labor_cost: number;
@@ -84,9 +85,11 @@ const getJob = createServerFn({ method: "GET" })
           j.actual_materials_cost, j.actual_labor_cost, j.actual_labor_hours,
           j.created_at, j.updated_at, j.client_id,
           c.name AS client_name, c.email AS client_email,
-          c.phone AS client_phone, c.address AS client_address
+          c.phone AS client_phone, c.address AS client_address,
+          e.labor_rate
         FROM jobs j
         JOIN clients c ON j.client_id = c.id
+        LEFT JOIN estimates e ON j.estimate_id = e.id
         WHERE j.id = ${jobId}
       `;
       if (jobRows.length === 0) return null;
@@ -110,6 +113,7 @@ const getJob = createServerFn({ method: "GET" })
         id: String(job.id),
         job_number: String(job.job_number),
         status: String(job.status),
+        labor_rate: job.labor_rate ? Number(job.labor_rate) : null,
         estimated_total: job.estimated_total ? Number(job.estimated_total) : null,
         actual_materials_cost: Number(job.actual_materials_cost),
         actual_labor_cost: Number(job.actual_labor_cost),
@@ -509,6 +513,7 @@ function computeFinancials(job: JobDetail): JobFinancials {
 function JobDetailPage() {
   const job = Route.useLoaderData();
   const navigate = useNavigate();
+  const router = useRouter();
 
   if (!job) {
     return (
@@ -554,7 +559,7 @@ function JobDetailPage() {
       await updateJobStatus({
         data: { jobId: job.id, status: newStatus },
       });
-      window.location.reload();
+      router.invalidate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update status");
     } finally {
@@ -717,7 +722,7 @@ function JobDetailPage() {
         <MaterialsSection jobId={job.id} materials={job.materials} />
 
         {/* Time Section */}
-        <TimeSection jobId={job.id} timeEntries={job.time_entries} />
+        <TimeSection jobId={job.id} timeEntries={job.time_entries} laborRate={job.labor_rate} />
 
         {/* Profit Summary */}
         <ProfitSummary financials={financials} />
@@ -740,6 +745,7 @@ function MaterialsSection({ jobId, materials }: { jobId: string; materials: Mate
   const [receiptUrl, setReceiptUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const totalMaterials = materials.reduce((sum, m) => sum + m.cost, 0);
 
@@ -764,8 +770,11 @@ function MaterialsSection({ jobId, materials }: { jobId: string; materials: Mate
           receipt_url: receiptUrl.trim() || undefined,
         },
       });
-      // Re-fetch will happen on reload
-      window.location.reload();
+      router.invalidate();
+      setDescription("");
+      setCost("");
+      setReceiptUrl("");
+      setShowForm(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add material");
     } finally {
@@ -898,13 +907,14 @@ function MaterialsSection({ jobId, materials }: { jobId: string; materials: Mate
 // Time Section
 // ---------------------------------------------------------------------------
 
-function TimeSection({ jobId, timeEntries: entries }: { jobId: string; timeEntries: TimeEntry[] }) {
+function TimeSection({ jobId, timeEntries: entries, laborRate }: { jobId: string; timeEntries: TimeEntry[]; laborRate: number | null }) {
   const [showForm, setShowForm] = useState(false);
   const [hours, setHours] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("75");
+  const [hourlyRate, setHourlyRate] = useState(laborRate != null ? String(laborRate) : "75");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const totalLabor = entries.reduce((sum, t) => sum + t.total_cost, 0);
   const totalHours = entries.reduce((sum, t) => sum + t.hours, 0);
@@ -931,7 +941,10 @@ function TimeSection({ jobId, timeEntries: entries }: { jobId: string; timeEntri
           notes: notes.trim() || undefined,
         },
       });
-      window.location.reload();
+      router.invalidate();
+      setHours("");
+      setHourlyRate(laborRate != null ? String(laborRate) : "75");
+      setNotes("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add time entry");
     } finally {
