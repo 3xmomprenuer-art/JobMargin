@@ -124,3 +124,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_estimate_id ON jobs(estimate_id);
 CREATE INDEX IF NOT EXISTS idx_job_materials_job_id ON job_materials(job_id);
 CREATE INDEX IF NOT EXISTS idx_job_time_entries_job_id ON job_time_entries(job_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_job_id ON invoices(job_id);
+
+-- =============================================================================
+-- MIGRATION: Add needs_payment_link to invoices
+-- =============================================================================
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS needs_payment_link BOOLEAN NOT NULL DEFAULT true;

@@ -213,7 +213,8 @@ const getInvoices = createServerFn({ method: "GET" })
       const rows = await sql`
         SELECT id, job_id, invoice_number, description, amount_cents,
                amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
-               customer_email, issued_at, paid_at, created_at, updated_at
+               customer_email, issued_at, paid_at, created_at, updated_at,
+               needs_payment_link
         FROM invoices
         WHERE job_id = ${jobId}
         ORDER BY created_at DESC
@@ -231,6 +232,7 @@ const getInvoices = createServerFn({ method: "GET" })
         customer_email: r.customer_email ? String(r.customer_email) : null,
         issued_at: r.issued_at ? String(r.issued_at) : null,
         paid_at: r.paid_at ? String(r.paid_at) : null,
+        needs_payment_link: Boolean(r.needs_payment_link),
         created_at: String(r.created_at),
         updated_at: String(r.updated_at),
       })) as Invoice[];
@@ -271,11 +273,11 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
 
     const rows = await sql`
-      INSERT INTO invoices (job_id, invoice_number, description, amount_cents, customer_email, issued_at)
-      VALUES (${jobId}, ${invoiceNumber}, ${description}, ${amountCents}, ${customerEmail}, ${now})
+      INSERT INTO invoices (job_id, invoice_number, description, amount_cents, customer_email, issued_at, needs_payment_link)
+      VALUES (${jobId}, ${invoiceNumber}, ${description}, ${amountCents}, ${customerEmail}, ${now}, true)
       RETURNING id, job_id, invoice_number, description, amount_cents,
                 amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
-                customer_email, issued_at, paid_at, created_at, updated_at
+                customer_email, issued_at, paid_at, needs_payment_link, created_at, updated_at
     `;
     const r = rows[0];
 
@@ -294,9 +296,62 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
       customer_email: r.customer_email ? String(r.customer_email) : null,
       issued_at: r.issued_at ? String(r.issued_at) : null,
       paid_at: r.paid_at ? String(r.paid_at) : null,
+      needs_payment_link: Boolean(r.needs_payment_link),
       created_at: String(r.created_at),
       updated_at: String(r.updated_at),
     } as Invoice;
+  });
+
+const markInvoicePaid = createServerFn({ method: "POST" })
+  .validator((data: unknown) => data as { invoiceId: string })
+  .handler(async ({ data: { invoiceId } }) => {
+    try {
+      const rows = await sql`
+        UPDATE invoices
+        SET status = 'paid',
+            paid_at = NOW(),
+            amount_paid_cents = amount_cents,
+            needs_payment_link = false,
+            updated_at = NOW()
+        WHERE id = ${invoiceId}
+        RETURNING id, status, paid_at, amount_paid_cents, needs_payment_link
+      `;
+      if (rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        id: String(r.id),
+        status: String(r.status),
+        paid_at: r.paid_at ? String(r.paid_at) : null,
+        amount_paid_cents: Number(r.amount_paid_cents),
+        needs_payment_link: Boolean(r.needs_payment_link),
+      };
+    } catch {
+      return null;
+    }
+  });
+
+const cancelInvoice = createServerFn({ method: "POST" })
+  .validator((data: unknown) => data as { invoiceId: string })
+  .handler(async ({ data: { invoiceId } }) => {
+    try {
+      const rows = await sql`
+        UPDATE invoices
+        SET status = 'cancelled',
+            needs_payment_link = false,
+            updated_at = NOW()
+        WHERE id = ${invoiceId} AND status = 'unpaid'
+        RETURNING id, status, needs_payment_link
+      `;
+      if (rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        id: String(r.id),
+        status: String(r.status),
+        needs_payment_link: Boolean(r.needs_payment_link),
+      };
+    } catch {
+      return null;
+    }
   });
 
 const getInvoice = createServerFn({ method: "GET" })
@@ -1151,40 +1206,129 @@ function InvoicesSection({
       )}
 
       {/* Invoice list */}
+      {/* Pending payment links banner */}
+      {invoices.some((inv) => inv.needs_payment_link && !inv.stripe_payment_link && inv.status === 'unpaid') && (
+        <div className="mb-3 rounded-lg bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-700 border border-blue-200">
+          Payment links pending — they'll be generated shortly.
+        </div>
+      )}
       {loading ? (
         <p className="text-sm text-gray-400 py-3">Loading...</p>
       ) : invoices.length === 0 ? (
         <p className="text-sm text-gray-400 py-3">No invoices yet</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {invoices.map((inv) => (
             <div
               key={inv.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-3"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {inv.invoice_number}
+              {/* Top row: info + amount */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {inv.invoice_number}
+                    </p>
+                    <InvoiceStatusBadge status={inv.status} paidAt={inv.paid_at} />
+                  </div>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">
+                    {inv.description}
                   </p>
-                  <InvoiceStatusBadge status={inv.status} />
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                    {inv.issued_at && <span>Issued {formatDateShort(inv.issued_at)}</span>}
+                    {inv.paid_at && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>Paid {formatDateShort(inv.paid_at)}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 truncate mt-0.5">
-                  {inv.description}
-                </p>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
-                  {inv.issued_at && <span>Issued {formatDateShort(inv.issued_at)}</span>}
-                  {inv.paid_at && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>Paid {formatDateShort(inv.paid_at)}</span>
-                    </>
-                  )}
-                </div>
+                <span className="text-sm font-bold text-gray-900 shrink-0">
+                  {formatCurrency(inv.amount_cents / 100)}
+                </span>
               </div>
-              <span className="text-sm font-semibold text-gray-900 shrink-0">
-                {formatCurrency(inv.amount_cents / 100)}
-              </span>
+
+              {/* Action row */}
+              {inv.status === 'unpaid' && inv.stripe_payment_link && (
+                <a
+                  href={inv.stripe_payment_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-green-500 active:bg-green-700 transition-colors"
+                >
+                  Pay Now
+                </a>
+              )}
+
+              {inv.status === 'unpaid' && !inv.stripe_payment_link && inv.needs_payment_link && (
+                <div className="mt-3 flex min-h-[40px] items-center justify-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500">
+                  <svg className="mr-2 h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Awaiting payment link...
+                </div>
+              )}
+
+              {inv.status === 'unpaid' && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const result = await markInvoicePaid({ data: { invoiceId: inv.id } });
+                      if (result) {
+                        setInvoices((prev) =>
+                          prev.map((i) =>
+                            i.id === inv.id
+                              ? { ...i, status: 'paid', paid_at: result.paid_at, amount_paid_cents: result.amount_paid_cents, needs_payment_link: result.needs_payment_link }
+                              : i
+                          )
+                        );
+                      }
+                    }}
+                    className="flex-1 min-h-[36px] rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 hover:bg-green-100 active:bg-green-200 transition-colors border border-green-200"
+                  >
+                    Mark as Paid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const result = await cancelInvoice({ data: { invoiceId: inv.id } });
+                      if (result) {
+                        setInvoices((prev) =>
+                          prev.map((i) =>
+                            i.id === inv.id
+                              ? { ...i, status: 'cancelled', needs_payment_link: result.needs_payment_link }
+                              : i
+                          )
+                        );
+                      }
+                    }}
+                    className="min-h-[36px] rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors border border-gray-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {inv.status === 'paid' && (
+                <div className="mt-3 flex items-center justify-center rounded-lg bg-green-50 px-3 py-2">
+                  <svg className="h-4 w-4 text-green-600 mr-1.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span className="text-xs font-semibold text-green-700">
+                    Paid {inv.paid_at ? formatDateShort(inv.paid_at) : ''}
+                  </span>
+                </div>
+              )}
+
+              {inv.status === 'cancelled' && (
+                <div className="mt-3 flex items-center justify-center rounded-lg bg-gray-50 px-3 py-2">
+                  <span className="text-xs font-semibold text-gray-500">Cancelled</span>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1192,8 +1336,7 @@ function InvoicesSection({
     </div>
   );
 }
-
-function InvoiceStatusBadge({ status }: { status: string }) {
+function InvoiceStatusBadge({ status, paidAt }: { status: string; paidAt?: string | null }) {
   const colors: Record<string, string> = {
     unpaid: "bg-amber-100 text-amber-800",
     paid: "bg-green-100 text-green-800",
@@ -1201,7 +1344,6 @@ function InvoiceStatusBadge({ status }: { status: string }) {
   };
   const color = colors[status] || "bg-gray-100 text-gray-800";
   const label = status.charAt(0).toUpperCase() + status.slice(1);
-
   return (
     <span
       className={"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " + color}
@@ -1210,9 +1352,7 @@ function InvoiceStatusBadge({ status }: { status: string }) {
     </span>
   );
 }
-
-
-// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------// ---------------------------------------------------------------------------
 // Profit Summary Section
 // ---------------------------------------------------------------------------
 
