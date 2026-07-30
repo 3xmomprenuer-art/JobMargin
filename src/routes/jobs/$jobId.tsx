@@ -411,6 +411,51 @@ const getInvoice = createServerFn({ method: "GET" })
     }
   });
 
+  const setInvoicePaymentLink = createServerFn({ method: "POST" })
+    .validator((data: unknown) => {
+      const d = data as { invoiceId: string; paymentLink: string };
+      if (!d.invoiceId || !d.paymentLink || d.paymentLink.trim().length === 0) {
+        throw new Error("Invoice ID and payment link are required");
+      }
+      return { invoiceId: d.invoiceId, paymentLink: d.paymentLink.trim() };
+    })
+    .handler(async ({ data: { invoiceId, paymentLink } }) => {
+      try {
+        const rows = await sql`
+          UPDATE invoices
+          SET stripe_payment_link = ${paymentLink},
+              needs_payment_link = false,
+              status = 'issued',
+              updated_at = NOW()
+          WHERE id = ${invoiceId}
+          RETURNING id, job_id, invoice_number, description, amount_cents,
+                    amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
+                    customer_email, issued_at, paid_at, needs_payment_link, created_at, updated_at
+        `;
+        if (rows.length === 0) return null;
+        const r = rows[0];
+        return {
+          id: String(r.id),
+          job_id: String(r.job_id),
+          invoice_number: String(r.invoice_number),
+          description: String(r.description),
+          amount_cents: Number(r.amount_cents),
+          amount_paid_cents: Number(r.amount_paid_cents),
+          status: String(r.status),
+          stripe_invoice_id: r.stripe_invoice_id ? String(r.stripe_invoice_id) : null,
+          stripe_payment_link: r.stripe_payment_link ? String(r.stripe_payment_link) : null,
+          customer_email: r.customer_email ? String(r.customer_email) : null,
+          issued_at: r.issued_at ? String(r.issued_at) : null,
+          paid_at: r.paid_at ? String(r.paid_at) : null,
+          needs_payment_link: Boolean(r.needs_payment_link),
+          created_at: String(r.created_at),
+          updated_at: String(r.updated_at),
+        } as Invoice;
+      } catch {
+        return null;
+      }
+    });
+
 export const Route = createFileRoute("/jobs/$jobId")({
   loader: ({ params }) =>
     getJob({ data: { jobId: params.jobId } }),
@@ -1227,7 +1272,7 @@ function InvoicesSection({
       {/* Pending payment links banner */}
       {invoices.some((inv) => inv.needs_payment_link && !inv.stripe_payment_link && inv.status === 'unpaid') && (
         <div className="mb-3 rounded-lg bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-700 border border-blue-200">
-          Payment links pending — they'll be generated shortly.
+            Generate a Stripe payment link and paste it below.
         </div>
       )}
       {loading ? (
@@ -1271,24 +1316,25 @@ function InvoicesSection({
 
               {/* Action row */}
               {inv.status === 'unpaid' && inv.stripe_payment_link && (
-                <a
-                  href={inv.stripe_payment_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-green-500 active:bg-green-700 transition-colors"
-                >
-                  Pay Now
-                </a>
+                <div className="mt-3 space-y-2">
+                  <a
+                    href={inv.stripe_payment_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-green-500 active:bg-green-700 transition-colors"
+                  >
+                    Pay Now
+                  </a>
+                  <CopyPaymentLinkButton paymentLink={inv.stripe_payment_link} />
+                </div>
               )}
 
               {inv.status === 'unpaid' && !inv.stripe_payment_link && inv.needs_payment_link && (
-                <div className="mt-3 flex min-h-[40px] items-center justify-center rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500">
-                  <svg className="mr-2 h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Awaiting payment link...
-                </div>
+                <PaymentLinkInput invoiceId={inv.id} onLinkSet={(updated) => {
+                  setInvoices((prev) =>
+                    prev.map((i) => i.id === inv.id ? { ...i, ...updated } : i)
+                  );
+                }} />
               )}
 
               {inv.status === 'unpaid' && (
@@ -1516,5 +1562,120 @@ function StatusBadge({
     >
       {label}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Payment Link Input (manual paste)
+// ---------------------------------------------------------------------------
+
+function PaymentLinkInput({ invoiceId, onLinkSet }: { invoiceId: string; onLinkSet: (updated: Partial<Invoice>) => void }) {
+  const [link, setLink] = useState("");
+  const [setting, setSetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSet = async () => {
+    const trimmed = link.trim();
+    if (!trimmed) {
+      setError("Please paste a payment link");
+      return;
+    }
+    // Basic URL validation
+    if (!trimmed.startsWith("https://")) {
+      setError("Payment link must start with https://");
+      return;
+    }
+    try {
+      setSetting(true);
+      setError(null);
+      const result = await setInvoicePaymentLink({ data: { invoiceId, paymentLink: trimmed } });
+      if (result) {
+        onLinkSet({
+          stripe_payment_link: result.stripe_payment_link,
+          needs_payment_link: result.needs_payment_link,
+          status: result.status,
+        });
+      } else {
+        setError("Failed to set payment link. Try again.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setSetting(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-[11px] text-gray-500">Generate a payment link externally and paste it here</p>
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={link}
+          onChange={(e) => { setLink(e.target.value); setError(null); }}
+          placeholder="https://buy.stripe.com/..."
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        />
+        <button
+          type="button"
+          onClick={handleSet}
+          disabled={setting}
+          className="min-h-[40px] rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 transition-colors shrink-0"
+        >
+          {setting ? "Setting..." : "Set Payment Link"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Copy Payment Link Button
+// ---------------------------------------------------------------------------
+
+function CopyPaymentLinkButton({ paymentLink }: { paymentLink: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(paymentLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const input = document.createElement("input");
+      input.value = paymentLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+    >
+      {copied ? (
+        <>
+          <svg className="h-3.5 w-3.5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Copied!
+        </>
+      ) : (
+        <>
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          Copy Link
+        </>
+      )}
+    </button>
   );
 }

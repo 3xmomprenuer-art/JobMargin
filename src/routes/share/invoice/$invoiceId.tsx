@@ -274,7 +274,7 @@ function PublicInvoicePage() {
       {!isPaid && !isCancelled && !invoice.stripe_payment_link && (
         <div className="rounded-xl bg-gray-100 p-5 text-center">
           <p className="text-sm font-medium text-gray-600">
-            Payment processing is being set up for this invoice.
+            This invoice is being prepared. A payment link will be available soon.
           </p>
           <p className="mt-1 text-xs text-gray-500">
             Please check back shortly or contact {invoice.client_name}.
