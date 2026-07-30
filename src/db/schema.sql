@@ -5,6 +5,30 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =============================================================================
+-- USERS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    company_name    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- SESSIONS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS sessions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token       TEXT NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
 -- CLIENTS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS clients (
@@ -113,6 +137,14 @@ CREATE TABLE IF NOT EXISTS invoices (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- =============================================================================
+-- MIGRATION: user_id columns for multi-tenancy
+-- =============================================================================
+ALTER TABLE clients    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE estimates  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE jobs       ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE invoices   ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
 -- =============================================================================
 -- INDEXES
