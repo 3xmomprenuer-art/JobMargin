@@ -251,6 +251,10 @@ function EstimateDetailPage() {
           <p className="text-sm text-gray-500">{formatDate(estimate.created_at)}</p>
         </div>
         <StatusBadge status={estimate.status} large />
+        <CopyShareLinkButton
+          shareUrl={`${window.location.origin}/share/estimate/${estimate.id}`}
+          label="Copy Share Link"
+        />
       </div>
 
       {/* Client info */}
@@ -485,6 +489,53 @@ function EstimateDetailPage() {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------
+// Copy Share Link Button
+// ---------------------------------------------------------------------------
+function CopyShareLinkButton({ shareUrl, label }: { shareUrl: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const input = document.createElement("input");
+      input.value = shareUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:bg-gray-200 transition-colors"
+      aria-label={label}
+      title={label}
+    >
+      {copied ? (
+        <svg className="h-4 w-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 function StatusBadge({
   status,

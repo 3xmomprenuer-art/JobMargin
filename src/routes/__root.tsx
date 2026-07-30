@@ -31,13 +31,16 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const loc = useLocation();
+  const isSharePage = loc.pathname.startsWith("/share");
+
   return (
     <RootDocument>
       <div className="flex min-h-dvh flex-col">
-        <main className="flex-1 pb-20">
+        <main className={isSharePage ? "flex-1" : "flex-1 pb-20"}>
           <Outlet />
         </main>
-        <BottomNav />
+        {!isSharePage && <BottomNav />}
       </div>
     </RootDocument>
   );
