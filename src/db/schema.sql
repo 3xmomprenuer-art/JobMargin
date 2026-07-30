@@ -94,6 +94,27 @@ CREATE TABLE IF NOT EXISTS job_time_entries (
 );
 
 -- =============================================================================
+-- INVOICES
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS invoices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id          UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    invoice_number  TEXT NOT NULL UNIQUE,
+    description     TEXT NOT NULL,
+    amount_cents    INTEGER NOT NULL,
+    amount_paid_cents INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'unpaid'
+                    CHECK (status IN ('unpaid', 'paid', 'cancelled')),
+    stripe_invoice_id TEXT,
+    stripe_payment_link TEXT,
+    customer_email  TEXT,
+    issued_at       TIMESTAMPTZ,
+    paid_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 CREATE INDEX IF NOT EXISTS idx_estimates_client_id ON estimates(client_id);
@@ -102,3 +123,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_client_id ON jobs(client_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_estimate_id ON jobs(estimate_id);
 CREATE INDEX IF NOT EXISTS idx_job_materials_job_id ON job_materials(job_id);
 CREATE INDEX IF NOT EXISTS idx_job_time_entries_job_id ON job_time_entries(job_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_job_id ON invoices(job_id);

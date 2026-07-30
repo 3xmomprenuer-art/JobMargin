@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { sql } from "~/db";
 
 // ---------------------------------------------------------------------------
@@ -204,6 +204,138 @@ const addTimeEntry = createServerFn({ method: "POST" })
     `;
 
     return { success: true };
+  });
+
+const getInvoices = createServerFn({ method: "GET" })
+  .validator((data: unknown) => data as { jobId: string })
+  .handler(async ({ data: { jobId } }) => {
+    try {
+      const rows = await sql`
+        SELECT id, job_id, invoice_number, description, amount_cents,
+               amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
+               customer_email, issued_at, paid_at, created_at, updated_at
+        FROM invoices
+        WHERE job_id = ${jobId}
+        ORDER BY created_at DESC
+      `;
+      return rows.map((r) => ({
+        id: String(r.id),
+        job_id: String(r.job_id),
+        invoice_number: String(r.invoice_number),
+        description: String(r.description),
+        amount_cents: Number(r.amount_cents),
+        amount_paid_cents: Number(r.amount_paid_cents),
+        status: String(r.status),
+        stripe_invoice_id: r.stripe_invoice_id ? String(r.stripe_invoice_id) : null,
+        stripe_payment_link: r.stripe_payment_link ? String(r.stripe_payment_link) : null,
+        customer_email: r.customer_email ? String(r.customer_email) : null,
+        issued_at: r.issued_at ? String(r.issued_at) : null,
+        paid_at: r.paid_at ? String(r.paid_at) : null,
+        created_at: String(r.created_at),
+        updated_at: String(r.updated_at),
+      })) as Invoice[];
+    } catch {
+      return [] as Invoice[];
+    }
+  });
+
+const createInvoiceForJob = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    const d = data as {
+      jobId: string;
+      description: string;
+      amountCents: number;
+      customerEmail?: string;
+    };
+    if (!d.description || d.description.trim().length === 0) {
+      throw new Error("Description is required");
+    }
+    if (typeof d.amountCents !== "number" || d.amountCents <= 0) {
+      throw new Error("Amount must be a positive number");
+    }
+    return {
+      jobId: d.jobId,
+      description: d.description.trim(),
+      amountCents: Math.round(d.amountCents),
+      customerEmail: d.customerEmail || null,
+    };
+  })
+  .handler(async ({ data: { jobId, description, amountCents, customerEmail } }) => {
+    // Generate next invoice number (INV-001 format)
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS cnt FROM invoices
+    `;
+    const nextNum = Number(countRows[0].cnt) + 1;
+    const invoiceNumber = `INV-${String(nextNum).padStart(3, "0")}`;
+
+    const now = new Date().toISOString();
+
+    const rows = await sql`
+      INSERT INTO invoices (job_id, invoice_number, description, amount_cents, customer_email, issued_at)
+      VALUES (${jobId}, ${invoiceNumber}, ${description}, ${amountCents}, ${customerEmail}, ${now})
+      RETURNING id, job_id, invoice_number, description, amount_cents,
+                amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
+                customer_email, issued_at, paid_at, created_at, updated_at
+    `;
+    const r = rows[0];
+
+    // Stripe integration: the lead calls create_invoice with this record's data
+
+    return {
+      id: String(r.id),
+      job_id: String(r.job_id),
+      invoice_number: String(r.invoice_number),
+      description: String(r.description),
+      amount_cents: Number(r.amount_cents),
+      amount_paid_cents: Number(r.amount_paid_cents),
+      status: String(r.status),
+      stripe_invoice_id: r.stripe_invoice_id ? String(r.stripe_invoice_id) : null,
+      stripe_payment_link: r.stripe_payment_link ? String(r.stripe_payment_link) : null,
+      customer_email: r.customer_email ? String(r.customer_email) : null,
+      issued_at: r.issued_at ? String(r.issued_at) : null,
+      paid_at: r.paid_at ? String(r.paid_at) : null,
+      created_at: String(r.created_at),
+      updated_at: String(r.updated_at),
+    } as Invoice;
+  });
+
+const getInvoice = createServerFn({ method: "GET" })
+  .validator((data: unknown) => data as { invoiceId: string })
+  .handler(async ({ data: { invoiceId } }) => {
+    try {
+      const rows = await sql`
+        SELECT i.id, i.job_id, i.invoice_number, i.description, i.amount_cents,
+               i.amount_paid_cents, i.status, i.stripe_invoice_id, i.stripe_payment_link,
+               i.customer_email, i.issued_at, i.paid_at, i.created_at, i.updated_at,
+               j.job_number, c.name AS client_name
+        FROM invoices i
+        JOIN jobs j ON i.job_id = j.id
+        JOIN clients c ON j.client_id = c.id
+        WHERE i.id = ${invoiceId}
+      `;
+      if (rows.length === 0) return null;
+      const r = rows[0];
+      return {
+        id: String(r.id),
+        job_id: String(r.job_id),
+        invoice_number: String(r.invoice_number),
+        description: String(r.description),
+        amount_cents: Number(r.amount_cents),
+        amount_paid_cents: Number(r.amount_paid_cents),
+        status: String(r.status),
+        stripe_invoice_id: r.stripe_invoice_id ? String(r.stripe_invoice_id) : null,
+        stripe_payment_link: r.stripe_payment_link ? String(r.stripe_payment_link) : null,
+        customer_email: r.customer_email ? String(r.customer_email) : null,
+        issued_at: r.issued_at ? String(r.issued_at) : null,
+        paid_at: r.paid_at ? String(r.paid_at) : null,
+        created_at: String(r.created_at),
+        updated_at: String(r.updated_at),
+        job_number: String(r.job_number),
+        client_name: String(r.client_name),
+      };
+    } catch {
+      return null;
+    }
   });
 
 export const Route = createFileRoute("/jobs/$jobId")({
@@ -471,6 +603,9 @@ function JobDetailPage() {
 
         {/* Profit Summary */}
         <ProfitSummary financials={financials} />
+
+          {/* Invoices Section */}
+          <InvoicesSection jobId={job.id} clientEmail={job.client_email || undefined} jobNumber={job.job_number} estimatedTotal={financials.estimated_total} actualTotal={financials.actual_total} />
       </div>
     </div>
   );
@@ -816,6 +951,266 @@ function TimeSection({ jobId, timeEntries: entries }: { jobId: string; timeEntri
     </div>
   );
 }
+// ---------------------------------------------------------------------------
+// Invoices Section
+// ---------------------------------------------------------------------------
+
+function InvoicesSection({
+  jobId,
+  clientEmail,
+  jobNumber,
+  estimatedTotal,
+  actualTotal,
+}: {
+  jobId: string;
+  clientEmail?: string;
+  jobNumber: string;
+  estimatedTotal: number;
+  actualTotal: number;
+}) {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [customerEmail, setCustomerEmail] = useState(clientEmail || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Load invoices on mount
+  useEffect(() => {
+    getInvoices({ data: { jobId } }).then((data) => {
+      setInvoices(data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleCreate = async () => {
+    const amountDollars = parseFloat(amount);
+    if (!description.trim()) {
+      setError("Description is required");
+      return;
+    }
+    if (isNaN(amountDollars) || amountDollars <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
+    try {
+      setSaving(true);
+      setError(null);
+      const newInvoice = await createInvoiceForJob({
+        data: {
+          jobId,
+          description: description.trim(),
+          amountCents: Math.round(amountDollars * 100),
+          customerEmail: customerEmail || undefined,
+        },
+      });
+      setInvoices((prev) => [newInvoice, ...prev]);
+      setSuccessMsg("Invoice " + newInvoice.invoice_number + " created!");
+      setShowForm(false);
+      setDescription("");
+      setAmount("");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create invoice");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openForm = () => {
+    const remaining = Math.max(0, (estimatedTotal || actualTotal) - invoices
+      .filter((inv) => inv.status !== "cancelled")
+      .reduce((sum, inv) => sum + inv.amount_cents, 0) / 100);
+    setDescription("Job " + jobNumber + " — Services");
+    setAmount(remaining > 0 ? remaining.toFixed(2) : (estimatedTotal || actualTotal).toFixed(2));
+    setCustomerEmail(clientEmail || "");
+    setError(null);
+    setShowForm(true);
+  };
+
+  const totalInvoiced = invoices
+    .filter((inv) => inv.status !== "cancelled")
+    .reduce((sum, inv) => sum + inv.amount_cents, 0) / 100;
+  const totalPaid = invoices
+    .filter((inv) => inv.status === "paid")
+    .reduce((sum, inv) => sum + inv.amount_paid_cents, 0) / 100;
+
+  return (
+    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold text-gray-900">Invoices</h2>
+        {!showForm && (
+          <button
+            type="button"
+            onClick={openForm}
+            className="inline-flex min-h-[40px] items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
+          >
+            + Create Invoice
+          </button>
+        )}
+      </div>
+
+      {/* Success message */}
+      {successMsg && (
+        <div className="mb-3 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+          {successMsg}
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Totals bar */}
+      {invoices.length > 0 && (
+        <div className="mb-3 flex gap-4 text-xs">
+          <div className="flex-1 rounded-lg bg-gray-50 px-3 py-2 text-center">
+            <p className="text-gray-500">Invoiced</p>
+            <p className="font-semibold text-gray-900">{formatCurrency(totalInvoiced)}</p>
+          </div>
+          <div className="flex-1 rounded-lg bg-green-50 px-3 py-2 text-center">
+            <p className="text-green-600">Paid</p>
+            <p className="font-semibold text-green-700">{formatCurrency(totalPaid)}</p>
+          </div>
+          <div className="flex-1 rounded-lg bg-amber-50 px-3 py-2 text-center">
+            <p className="text-amber-600">Outstanding</p>
+            <p className="font-semibold text-amber-700">{formatCurrency(Math.max(0, totalInvoiced - totalPaid))}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Create form */}
+      {showForm && (
+        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">New Invoice</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Description
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Plumbing repair services"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Amount ($)
+              </label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Customer Email <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="customer@example.com"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setError(null); }}
+                className="flex-1 min-h-[44px] rounded-lg bg-gray-100 px-3 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={saving}
+                className="flex-1 min-h-[44px] rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Creating..." : "Send Invoice"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice list */}
+      {loading ? (
+        <p className="text-sm text-gray-400 py-3">Loading...</p>
+      ) : invoices.length === 0 ? (
+        <p className="text-sm text-gray-400 py-3">No invoices yet</p>
+      ) : (
+        <div className="space-y-2">
+          {invoices.map((inv) => (
+            <div
+              key={inv.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {inv.invoice_number}
+                  </p>
+                  <InvoiceStatusBadge status={inv.status} />
+                </div>
+                <p className="text-xs text-gray-500 truncate mt-0.5">
+                  {inv.description}
+                </p>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                  {inv.issued_at && <span>Issued {formatDateShort(inv.issued_at)}</span>}
+                  {inv.paid_at && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>Paid {formatDateShort(inv.paid_at)}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <span className="text-sm font-semibold text-gray-900 shrink-0">
+                {formatCurrency(inv.amount_cents / 100)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    unpaid: "bg-amber-100 text-amber-800",
+    paid: "bg-green-100 text-green-800",
+    cancelled: "bg-gray-100 text-gray-600",
+  };
+  const color = colors[status] || "bg-gray-100 text-gray-800";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+
+  return (
+    <span
+      className={"inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " + color}
+    >
+      {label}
+    </span>
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Profit Summary Section
