@@ -40,7 +40,12 @@ function RootComponent() {
         <main className={isSharePage ? "flex-1" : "flex-1 pb-20"}>
           <Outlet />
         </main>
-        {!isSharePage && <BottomNav />}
+        {!isSharePage && (
+          <>
+            <AppFooter />
+            <BottomNav />
+          </>
+        )}
       </div>
     </RootDocument>
   );
@@ -157,5 +162,27 @@ function JobsIcon({ active }: { active: boolean }) {
       <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
       <circle cx="12" cy="14" r="2" />
     </svg>
+  );
+}
+
+function AppFooter() {
+  return (
+    <footer className="border-t border-gray-100 bg-white py-4">
+      <div className="mx-auto flex max-w-lg items-center justify-center gap-4 px-4 text-xs text-gray-400">
+        <span>&copy; 2026 JobMargin</span>
+        <Link
+          to="/terms"
+          className="hover:text-gray-600 transition-colors"
+        >
+          Terms
+        </Link>
+        <Link
+          to="/privacy"
+          className="hover:text-gray-600 transition-colors"
+        >
+          Privacy
+        </Link>
+      </div>
+    </footer>
   );
 }
