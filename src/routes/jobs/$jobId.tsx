@@ -51,6 +51,24 @@ interface JobFinancials {
   profit: number;
   margin_pct: number;
 }
+interface Invoice {
+  id: string;
+  job_id: string;
+  invoice_number: string;
+  description: string;
+  amount_cents: number;
+  amount_paid_cents: number;
+  status: string;
+  stripe_invoice_id: string | null;
+  stripe_payment_link: string | null;
+  customer_email: string | null;
+  issued_at: string | null;
+  paid_at: string | null;
+  cancelled_at: string | null;
+  needs_payment_link: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 // ---------------------------------------------------------------------------
 // Server functions

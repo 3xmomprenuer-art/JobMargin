@@ -89,6 +89,34 @@ const updateStatus = createServerFn({ method: "POST" })
       UPDATE estimates SET status = ${status}, updated_at = NOW()
       WHERE id = ${estimateId}
     `;
+    // When accepting, create a Job if one doesn't already exist
+    if (status === "accepted") {
+      const existingJob = await sql`
+        SELECT id FROM jobs WHERE estimate_id = ${estimateId} LIMIT 1
+      `;
+      if (existingJob.length === 0) {
+        const estRows = await sql`
+          SELECT id, client_id, estimated_total, estimate_number
+          FROM estimates WHERE id = ${estimateId}
+        `;
+        if (estRows.length > 0) {
+          const est = estRows[0];
+          const numRows = await sql`
+            SELECT COALESCE(
+              MAX(NULLIF(REGEXP_REPLACE(job_number, '[^0-9]', '', 'g'), '')::int),
+              0
+            ) + 1 AS next_num
+            FROM jobs
+          `;
+          const nextNum = Number(numRows[0].next_num);
+          const jobNumber = "JOB-" + String(nextNum).padStart(3, "0");
+          await sql`
+            INSERT INTO jobs (estimate_id, client_id, status, job_number, estimated_total)
+            VALUES (${estimateId}, ${est.client_id}, 'not_started', ${jobNumber}, ${est.estimated_total})
+          `;
+        }
+      }
+    }
     return { success: true };
   });
 
@@ -203,10 +231,7 @@ function EstimateDetailPage() {
       const result = await convertToJob({
         data: { estimateId: estimate.id },
       });
-      navigate({
-        to: "/jobs",
-        // We'll navigate to jobs list for now since /jobs/$jobId doesn't exist yet
-      });
+      navigate({ to: "/jobs/" + result.jobId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to convert to job");
     } finally {
