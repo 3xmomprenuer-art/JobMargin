@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +45,9 @@ interface LineItemDetail {
 const getEstimate = createServerFn({ method: "GET" })
   .validator((data: unknown) => data as { estimateId: string })
   .handler(async ({ data: { estimateId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
     const estRows = await sql`
       SELECT e.id, e.estimate_number, e.status, e.notes, e.labor_rate, e.markup_pct,
@@ -52,7 +56,7 @@ const getEstimate = createServerFn({ method: "GET" })
              c.phone AS client_phone, c.address AS client_address
       FROM estimates e
       JOIN clients c ON e.client_id = c.id
-      WHERE e.id = ${estimateId}
+      WHERE e.id = ${estimateId} AND e.user_id = ${userId}
     `;
     if (estRows.length === 0) return null;
     const est = estRows[0];
@@ -85,19 +89,26 @@ const updateStatus = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data: { estimateId, status } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
+    const ownedEstimate = await sql`
+      SELECT id FROM estimates WHERE id = ${estimateId} AND user_id = ${userId}
+    `;
+    if (ownedEstimate.length === 0) throw new Error("Estimate not found");
     await sql`
       UPDATE estimates SET status = ${status}, updated_at = NOW()
-      WHERE id = ${estimateId}
+      WHERE id = ${estimateId} AND user_id = ${userId}
     `;
     // When accepting, create a Job if one doesn't already exist
     if (status === "accepted") {
       const existingJob = await sql`
-        SELECT id FROM jobs WHERE estimate_id = ${estimateId} LIMIT 1
+        SELECT id FROM jobs WHERE estimate_id = ${estimateId} AND user_id = ${userId} LIMIT 1
       `;
       if (existingJob.length === 0) {
         const estRows = await sql`
           SELECT id, client_id, estimated_total, estimate_number
-          FROM estimates WHERE id = ${estimateId}
+          FROM estimates WHERE id = ${estimateId} AND user_id = ${userId}
         `;
         if (estRows.length > 0) {
           const est = estRows[0];
@@ -107,12 +118,13 @@ const updateStatus = createServerFn({ method: "POST" })
               0
             ) + 1 AS next_num
             FROM jobs
+            WHERE user_id = ${userId}
           `;
           const nextNum = Number(numRows[0].next_num);
           const jobNumber = "JOB-" + String(nextNum).padStart(3, "0");
           await sql`
-            INSERT INTO jobs (estimate_id, client_id, status, job_number, estimated_total)
-            VALUES (${estimateId}, ${est.client_id}, 'not_started', ${jobNumber}, ${est.estimated_total})
+            INSERT INTO jobs (user_id, estimate_id, client_id, status, job_number, estimated_total)
+            VALUES (${userId}, ${estimateId}, ${est.client_id}, 'not_started', ${jobNumber}, ${est.estimated_total})
           `;
         }
       }
@@ -123,9 +135,12 @@ const updateStatus = createServerFn({ method: "POST" })
 const convertToJob = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as { estimateId: string })
   .handler(async ({ data: { estimateId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     // Get the estimate
     const estRows = await sql`
-      SELECT id, client_id, estimated_total, estimate_number FROM estimates WHERE id = ${estimateId}
+      SELECT id, client_id, estimated_total, estimate_number FROM estimates WHERE id = ${estimateId} AND user_id = ${userId}
     `;
     if (estRows.length === 0) return null;
     const est = estRows[0];
@@ -137,14 +152,15 @@ const convertToJob = createServerFn({ method: "POST" })
         0
       ) + 1 AS next_num
       FROM jobs
+      WHERE user_id = ${userId}
     `;
     const nextNum = Number(numRows[0].next_num);
     const jobNumber = `JOB-${String(nextNum).padStart(3, "0")}`;
 
     // Create job
     const jobRows = await sql`
-      INSERT INTO jobs (estimate_id, client_id, status, job_number, estimated_total)
-      VALUES (${estimateId}, ${est.client_id}, 'not_started', ${jobNumber}, ${est.estimated_total})
+      INSERT INTO jobs (user_id, estimate_id, client_id, status, job_number, estimated_total)
+      VALUES (${userId}, ${estimateId}, ${est.client_id}, 'not_started', ${jobNumber}, ${est.estimated_total})
       RETURNING id
     `;
 

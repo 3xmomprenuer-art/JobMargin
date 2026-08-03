@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useRef, useEffect } from "react";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Server function
@@ -38,9 +39,12 @@ const createClient = createServerFn({ method: "POST" })
     } as ClientInput;
   })
   .handler(async ({ data }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     const rows = await sql`
-      INSERT INTO clients (name, email, phone, address)
-      VALUES (${data.name}, ${data.email}, ${data.phone}, ${data.address})
+      INSERT INTO clients (user_id, name, email, phone, address)
+      VALUES (${userId}, ${data.name}, ${data.email}, ${data.phone}, ${data.address})
       RETURNING id, name, email, phone, address, created_at, updated_at
     `;
     const r = rows[0];

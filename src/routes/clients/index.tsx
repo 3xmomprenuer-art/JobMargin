@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Server functions
@@ -17,10 +18,14 @@ interface Client {
 }
 
 const getClients = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  const userId = user.id;
   try {
     const rows = await sql`
       SELECT id, name, email, phone, address, created_at, updated_at
       FROM clients
+      WHERE user_id = ${userId}
       ORDER BY created_at DESC
     `;
     return rows.map((r) => ({

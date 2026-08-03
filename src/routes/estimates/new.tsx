@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useEffect, useCallback } from "react";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,9 +37,12 @@ interface EstimateInput {
 // ---------------------------------------------------------------------------
 
 const getClientsForDropdown = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  const userId = user.id;
   try {
     const rows = await sql`
-      SELECT id, name FROM clients ORDER BY name ASC
+      SELECT id, name FROM clients WHERE user_id = ${userId} ORDER BY name ASC
     `;
     return rows as ClientOption[];
   } catch {
@@ -59,6 +63,9 @@ const createEstimate = createServerFn({ method: "POST" })
     return d;
   })
   .handler(async ({ data }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     // Generate estimate number
     const numRows = await sql`
       SELECT COALESCE(
@@ -66,14 +73,15 @@ const createEstimate = createServerFn({ method: "POST" })
         0
       ) + 1 AS next_num
       FROM estimates
+      WHERE user_id = ${userId}
     `;
     const nextNum = Number(numRows[0].next_num);
     const estimateNumber = `EST-${String(nextNum).padStart(3, "0")}`;
 
     // Insert estimate
     const estRows = await sql`
-      INSERT INTO estimates (client_id, status, estimate_number, notes, labor_rate, markup_pct, estimated_total)
-      VALUES (${data.client_id}, 'draft', ${estimateNumber}, ${data.notes || null}, ${data.labor_rate}, ${data.markup_pct}, ${data.estimated_total})
+      INSERT INTO estimates (user_id, client_id, status, estimate_number, notes, labor_rate, markup_pct, estimated_total)
+      VALUES (${userId}, ${data.client_id}, 'draft', ${estimateNumber}, ${data.notes || null}, ${data.labor_rate}, ${data.markup_pct}, ${data.estimated_total})
       RETURNING id
     `;
     const estimateId = estRows[0].id as string;

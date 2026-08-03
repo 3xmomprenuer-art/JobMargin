@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Server functions
@@ -17,12 +18,16 @@ interface EstimateRow {
 }
 
 const getEstimates = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  const userId = user.id;
   try {
     const rows = await sql`
       SELECT e.id, e.estimate_number, e.status, e.estimated_total, e.notes, e.created_at,
              c.name AS client_name
       FROM estimates e
       JOIN clients c ON e.client_id = c.id
+      WHERE e.user_id = ${userId}
       ORDER BY e.created_at DESC
     `;
     return rows.map((r) => ({
