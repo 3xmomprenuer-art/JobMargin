@@ -30,6 +30,33 @@ export interface User {
   email: string;
   name: string;
   companyName: string | null;
+  subscriptionStatus: string;
+  trialStartedAt: string;
+  stripeCustomerId: string | null;
+  subscriptionEndsAt: string | null;
+}
+
+// Subscriptions that require the user to fix billing before using the app.
+export const SUBSCRIPTION_ATTENTION_STATUSES = [
+  "past_due",
+  "canceled",
+  "incomplete_expired",
+] as const;
+
+// Free trial length in milliseconds (7 days).
+export const TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function toUser(u: Record<string, unknown>): User {
+  return {
+    id: String(u.id),
+    email: String(u.email),
+    name: String(u.name),
+    companyName: u.company_name ? String(u.company_name) : null,
+    subscriptionStatus: String(u.subscription_status ?? "trialing"),
+    trialStartedAt: u.trial_started_at ? String(u.trial_started_at) : new Date(0).toISOString(),
+    stripeCustomerId: u.stripe_customer_id ? String(u.stripe_customer_id) : null,
+    subscriptionEndsAt: u.subscription_ends_at ? String(u.subscription_ends_at) : null,
+  };
 }
 
 export interface AuthResult {
@@ -120,14 +147,15 @@ export const signup = createServerFn({ method: "POST" })
         return { user: null, error: "An account with that email already exists." };
       }
 
-      // Hash password & insert user
+      // Hash password & insert user — every new account starts a 7-day free
+      // trial (subscription_status = 'trialing', trial_started_at = NOW()).
       const passwordHash = await hashPassword(password);
       const userRows = await sql`
-        INSERT INTO users (email, password_hash, name, company_name)
+        INSERT INTO users (email, password_hash, name, company_name, subscription_status, trial_started_at)
         VALUES (${normalizedEmail}, ${passwordHash}, ${name.trim()}, ${
           companyName?.trim() || null
-        })
-        RETURNING id, email, name, company_name
+        }, 'trialing', NOW())
+        RETURNING id, email, name, company_name, subscription_status, trial_started_at, stripe_customer_id, subscription_ends_at
       `;
       const newUser = userRows[0];
       const userId = String(newUser.id);
@@ -145,14 +173,7 @@ export const signup = createServerFn({ method: "POST" })
       const { token } = await createSession(userId);
       setCookie("session_token", token, cookieOptions);
 
-      return {
-        user: {
-          id: userId,
-          email: String(newUser.email),
-          name: String(newUser.name),
-          companyName: newUser.company_name ? String(newUser.company_name) : null,
-        },
-      };
+      return { user: toUser(newUser as Record<string, unknown>) };
     } catch {
       return { user: null, error: "Something went wrong. Please try again." };
     }
@@ -172,7 +193,7 @@ export const login = createServerFn({ method: "POST" })
 
       // Look up user
       const rows = await sql`
-        SELECT id, email, password_hash, name, company_name
+        SELECT id, email, password_hash, name, company_name, subscription_status, trial_started_at, stripe_customer_id, subscription_ends_at
         FROM users
         WHERE email = ${normalizedEmail}
       `;
@@ -192,14 +213,7 @@ export const login = createServerFn({ method: "POST" })
       const { token } = await createSession(String(u.id));
       setCookie("session_token", token, cookieOptions);
 
-      return {
-        user: {
-          id: String(u.id),
-          email: String(u.email),
-          name: String(u.name),
-          companyName: u.company_name ? String(u.company_name) : null,
-        },
-      };
+      return { user: toUser(u as Record<string, unknown>) };
     } catch {
       return { user: null, error: "Something went wrong. Please try again." };
     }
@@ -234,19 +248,13 @@ export const getCurrentUser = createServerFn({ method: "GET" }).handler(
       }
 
       const rows = await sql`
-        SELECT id, email, name, company_name
+        SELECT id, email, name, company_name, subscription_status, trial_started_at, stripe_customer_id, subscription_ends_at
         FROM users
         WHERE id = ${session.user_id}
       `;
       if (rows.length === 0) return null;
 
-      const u = rows[0];
-      return {
-        id: String(u.id),
-        email: String(u.email),
-        name: String(u.name),
-        companyName: u.company_name ? String(u.company_name) : null,
-      };
+      return toUser(rows[0] as Record<string, unknown>);
     } catch {
       return null;
     }

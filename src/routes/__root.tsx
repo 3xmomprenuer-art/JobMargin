@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { getCurrentUser } from "~/lib/auth";
+import { getCurrentUser, SUBSCRIPTION_ATTENTION_STATUSES, TRIAL_DURATION_MS } from "~/lib/auth";
 import type { User } from "~/lib/auth";
 import appCss from "~/styles/app.css?url";
 
@@ -26,10 +26,36 @@ const PUBLIC_PATHS = [
   "/logout",
   "/forgot-password",
   "/reset-password",
+  "/pricing",
   "/share",
   "/terms",
   "/privacy",
 ];
+
+// Trial/subscription enforcement — redirects users whose trial has expired or
+// whose subscription needs attention to /pricing. Exempts /pricing and /logout
+// so users can always reach the page that fixes their state.
+function enforceSubscription(user: User, pathname: string): void {
+  if (pathname === "/pricing" || pathname === "/logout") return;
+
+  if (user.subscriptionStatus === "trialing") {
+    const trialEnd = new Date(user.trialStartedAt).getTime() + TRIAL_DURATION_MS;
+    if (Date.now() > trialEnd) {
+      throw redirect({
+        to: "/pricing",
+        search: { success: undefined, canceled: undefined, trial_expired: "true" },
+      });
+    }
+  }
+
+  if (
+    (SUBSCRIPTION_ATTENTION_STATUSES as readonly string[]).includes(
+      user.subscriptionStatus,
+    )
+  ) {
+    throw redirect({ to: "/pricing", search: { success: undefined, canceled: undefined, trial_expired: undefined } });
+  }
+}
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -37,12 +63,16 @@ export const Route = createRootRoute({
       location.pathname.startsWith(p),
     );
     if (location.pathname === "/") {
-      return { user: await getCurrentUser() };
+      const user = await getCurrentUser();
+      if (!user) return;
+      enforceSubscription(user, location.pathname);
+      return { user };
     }
     if (isPublic) return;
 
     const user = await getCurrentUser();
     if (!user) throw redirect({ to: "/login" });
+    enforceSubscription(user, location.pathname);
     return { user };
   },
   head: () => ({
@@ -112,9 +142,19 @@ function RootDocument({ children }: { children: ReactNode }) {
 
 function UserBar({ user }: { user: User | undefined }) {
   if (!user) return null;
+  const needsUpgrade = user.subscriptionStatus !== "active";
   return (
     <div className="border-b border-gray-100 bg-white">
-      <div className="mx-auto flex max-w-lg items-center justify-end gap-2 px-4 py-1.5 text-xs text-gray-500">
+      <div className="mx-auto flex max-w-lg items-center justify-end gap-3 px-4 py-1.5 text-xs text-gray-500">
+        {needsUpgrade && (
+          <Link
+            to="/pricing"
+            search={{ success: undefined, canceled: undefined, trial_expired: undefined }}
+            className="font-semibold text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-500 hover:underline"
+          >
+            Upgrade
+          </Link>
+        )}
         <span className="max-w-[40vw] truncate">{user.name}</span>
         <span className="text-gray-300">•</span>
         <Link

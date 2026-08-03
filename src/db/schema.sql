@@ -172,3 +172,11 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     used        BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- =============================================================================
+-- MIGRATION: subscription / trial columns
+-- =============================================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'trialing' CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ends_at TIMESTAMPTZ;
