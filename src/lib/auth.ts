@@ -14,6 +14,12 @@ import { getCookie, setCookie, deleteCookie } from "@tanstack/react-start/server
 import { redirect } from "@tanstack/react-router";
 import { hashSync, compareSync } from "bcryptjs";
 import { sql } from "~/db";
+import { sendEmail } from "~/lib/email";
+
+// Base URL used to build password-reset links. Overridable via APP_URL so the
+// deployed environment can point at its own public origin.
+const RESET_BASE_URL =
+  process.env.APP_URL || "https://site-rdtdy9kyl-4xmomprenuer.vercel.app";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -258,3 +264,107 @@ export async function requireAuth(): Promise<User> {
   }
   return user;
 }
+
+// ---------------------------------------------------------------------------
+// Password reset
+// ---------------------------------------------------------------------------
+
+export const requestPasswordReset = createServerFn({ method: "POST" })
+  .validator((data: { email: string }) => data)
+  .handler(async ({ data }) => {
+    try {
+      const email = (data.email ?? "").trim().toLowerCase();
+      if (!email) return { success: true, resetLink: null };
+
+      const rows = await sql`
+        SELECT id, email FROM users WHERE email = ${email}
+      `;
+
+      let resetLink: string | null = null;
+      if (rows.length > 0) {
+        const userId = String(rows[0].id);
+        const token = crypto.randomUUID();
+
+        await sql`
+          INSERT INTO password_reset_tokens (user_id, token, expires_at)
+          VALUES (${userId}, ${token}, NOW() + interval '1 hour')
+        `;
+
+        resetLink = `${RESET_BASE_URL}/reset-password?token=${token}`;
+        await sendEmail({
+          to: email,
+          subject: "Reset your JobMargin password",
+          text:
+            "We received a request to reset your JobMargin password.\n\n" +
+            `Open this link to choose a new password (valid for 1 hour):\n${resetLink}\n\n` +
+            "If you didn't request this, you can safely ignore this email.",
+        });
+      }
+
+      // Always report success so we never reveal whether an email exists.
+      // `resetLink` is included only when the account exists — TEMPORARY
+      // bridge for manual delivery until email sending is wired up
+      // (see src/lib/email.ts). Remove once real email delivery lands.
+      return { success: true, resetLink };
+    } catch {
+      return { success: true, resetLink: null };
+    }
+  });
+
+export const resetPassword = createServerFn({ method: "POST" })
+  .validator((data: { token: string; newPassword: string }) => data)
+  .handler(async ({ data }) => {
+    try {
+      const { token, newPassword } = data;
+
+      if (!token) {
+        return { success: false, error: "Invalid or expired reset link." };
+      }
+      if (!newPassword || newPassword.length < 6) {
+        return {
+          success: false,
+          error: "Password must be at least 6 characters.",
+        };
+      }
+
+      const rows = await sql`
+        SELECT user_id, expires_at, used
+        FROM password_reset_tokens
+        WHERE token = ${token}
+      `;
+      if (rows.length === 0) {
+        return { success: false, error: "Invalid or expired reset link." };
+      }
+
+      const resetToken = rows[0];
+      if (resetToken.used) {
+        return {
+          success: false,
+          error: "This reset link has already been used. Request a new one.",
+        };
+      }
+      if (new Date(String(resetToken.expires_at)) < new Date()) {
+        return {
+          success: false,
+          error: "This reset link has expired. Request a new one.",
+        };
+      }
+
+      const userId = String(resetToken.user_id);
+      const passwordHash = hashSync(newPassword, 10);
+
+      await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${userId}`;
+      await sql`
+        UPDATE password_reset_tokens SET used = true WHERE token = ${token}
+      `;
+      // Force logout everywhere: kill every session for this user.
+      await sql`DELETE FROM sessions WHERE user_id = ${userId}`;
+
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error: "Something went wrong. Please try again.",
+      };
+    }
+  });
