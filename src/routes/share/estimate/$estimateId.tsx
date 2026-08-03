@@ -46,6 +46,7 @@ const getPublicEstimate = createServerFn({ method: "GET" })
         WHERE e.id = ${estimateId}
       `;
       if (estRows.length === 0) return null;
+      if (estRows[0].status === 'draft') return null;
       const est = estRows[0];
 
       const itemRows = await sql`
