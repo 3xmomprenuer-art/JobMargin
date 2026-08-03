@@ -14,7 +14,7 @@ export async function sendEmail({
   body: string;
 }) {
   const { data, error } = await resend.emails.send({
-    from: "JobMargin <onboarding@resend.dev>",
+    from: "JobMargin <noreply@job-margin.com>",
     to: [to],
     subject,
     text: body,
