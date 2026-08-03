@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import type { ReactNode } from "react";
 import { sql } from "~/db";
 import { getCurrentUser } from "~/lib/auth";
 
@@ -354,6 +355,8 @@ function LandingPage() {
         </div>
       </section>
 
+      <HowItWorks />
+
       <section className="border-y border-slate-200 bg-slate-50 px-4 py-14 text-center sm:py-20">
         <div className="mx-auto max-w-2xl">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
@@ -370,6 +373,299 @@ function LandingPage() {
 
 function FeatureCard({ number, title, description }: { number: string; title: string; description: string }) {
   return <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><span className="text-sm font-bold text-blue-600">{number}</span><h3 className="mt-5 text-lg font-bold text-slate-900">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{description}</p></article>;
+}
+
+// ---------------------------------------------------------------------------
+// How It Works (landing page)
+// ---------------------------------------------------------------------------
+
+function HowItWorks() {
+  const steps: { number: string; title: string; description: string; phone: ReactNode }[] = [
+    {
+      number: "01",
+      title: "Create an Estimate",
+      description:
+        "Build professional estimates with line items for labor, materials, and markup. Share with clients via a link.",
+      phone: <EstimatePhone />,
+    },
+    {
+      number: "02",
+      title: "Track Real Costs",
+      description: "Log materials and time as you work. Watch your profit update in real time.",
+      phone: <CostsPhone />,
+    },
+    {
+      number: "03",
+      title: "Invoice & Get Paid",
+      description:
+        "Generate invoices with Stripe payment links. Clients pay with one click from any device.",
+      phone: <InvoicePhone />,
+    },
+    {
+      number: "04",
+      title: "Know Your Profit",
+      description:
+        "JobMargin answers the one question every contractor asks: Did I actually make what I thought I would?",
+      phone: <ProfitPhone />,
+    },
+  ];
+
+  return (
+    <section className="border-t border-slate-200 bg-slate-50 px-4 py-16 sm:py-24">
+      <div className="mx-auto max-w-5xl">
+        <div className="mx-auto mb-12 max-w-2xl text-center sm:mb-16">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">See How It Works</h2>
+          <p className="mt-3 text-base leading-7 text-slate-600">
+            From estimate to payment in four steps — all from your phone.
+          </p>
+        </div>
+        <div className="space-y-6 sm:space-y-10">
+          {steps.map((step, i) => (
+            <HowItWorksStep
+              key={step.number}
+              number={step.number}
+              title={step.title}
+              description={step.description}
+              reversed={i % 2 === 1}
+            >
+              {step.phone}
+            </HowItWorksStep>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HowItWorksStep({
+  number,
+  title,
+  description,
+  reversed,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  reversed: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="flex flex-col items-center gap-7 md:grid md:grid-cols-2 md:items-center md:gap-12">
+        <div className={reversed ? "md:order-2" : "md:order-1"}>{children}</div>
+        <div
+          className={`flex flex-col items-center text-center md:items-start md:text-left ${
+            reversed ? "md:order-1" : "md:order-2"
+          }`}
+        >
+          <span className="text-sm font-bold text-blue-600">{number}</span>
+          <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{title}</h3>
+          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">{description}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PhoneFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="w-60 max-w-full overflow-hidden rounded-3xl border-8 border-gray-800 bg-slate-950 shadow-2xl shadow-slate-900/25">
+      {children}
+    </div>
+  );
+}
+
+function ScreenHeader({ title, right }: { title: string; right?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between bg-slate-950 px-3 py-2">
+      <p className="text-[11px] font-semibold tracking-wide text-white">{title}</p>
+      {right}
+    </div>
+  );
+}
+
+function ScreenLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="mb-0.5 text-[8px] font-semibold uppercase tracking-wider text-gray-500">{children}</p>
+  );
+}
+
+function ScreenInput({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+  return (
+    <div
+      className={`flex h-5 items-center rounded-md border border-gray-200 bg-white px-1.5 text-[10px] text-gray-800 ${
+        wide ? "col-span-2" : ""
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function EstimatePhone() {
+  return (
+    <PhoneFrame>
+      <ScreenHeader title="New Estimate" />
+      <div className="space-y-2 bg-slate-100 p-2.5">
+        <div>
+          <ScreenLabel>Client Name</ScreenLabel>
+          <ScreenInput>John Homeowner</ScreenInput>
+        </div>
+        <div>
+          <ScreenLabel>Line Item</ScreenLabel>
+          <div className="grid grid-cols-4 gap-1">
+            <ScreenInput wide>Supply line</ScreenInput>
+            <div className="flex h-5 items-center justify-center rounded-md border border-gray-200 bg-white text-[10px] text-gray-800">2</div>
+            <div className="flex h-5 items-center justify-center rounded-md border border-gray-200 bg-white text-[10px] text-gray-800">$185</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <div>
+            <ScreenLabel>Labor Hours</ScreenLabel>
+            <ScreenInput>8 hrs</ScreenInput>
+          </div>
+          <div>
+            <ScreenLabel>Materials</ScreenLabel>
+            <ScreenInput>$850</ScreenInput>
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-0.5">
+          <span className="text-[10px] font-medium text-gray-500">Total</span>
+          <span className="text-[13px] font-bold text-slate-900">$2,450</span>
+        </div>
+        <div className="flex h-6 items-center justify-center gap-1 rounded-md bg-blue-500 text-[10px] font-semibold text-white">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Save Estimate
+        </div>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function CostsPhone() {
+  return (
+    <PhoneFrame>
+      <ScreenHeader
+        title="JOB-001"
+        right={
+          <span className="rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-blue-300">
+            In Progress
+          </span>
+        }
+      />
+      <div className="space-y-2.5 bg-slate-100 p-2.5">
+        <div>
+          <ScreenLabel>Materials</ScreenLabel>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between rounded-md bg-white px-2 py-1">
+              <span className="text-[10px] text-gray-700">PVC Pipe</span>
+              <span className="text-[10px] font-semibold text-slate-900">$42.50</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-white px-2 py-1">
+              <span className="text-[10px] text-gray-700">Fittings</span>
+              <span className="text-[10px] font-semibold text-slate-900">$18.75</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <ScreenLabel>Time</ScreenLabel>
+          <div className="flex items-center justify-between rounded-md bg-white px-2 py-1">
+            <span className="flex items-center gap-1 text-[10px] text-gray-700">
+              <svg className="h-2.5 w-2.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              2.5 hrs @ $75/hr
+            </span>
+            <span className="text-[10px] font-semibold text-slate-900">$187.50</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between rounded-md bg-slate-900 px-2 py-1.5">
+          <span className="text-[9px] font-medium text-slate-300">Actual Costs</span>
+          <span className="text-[12px] font-bold text-white">$248.75</span>
+        </div>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function InvoicePhone() {
+  return (
+    <PhoneFrame>
+      <ScreenHeader
+        title="Invoice INV-001"
+        right={
+          <span className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-amber-300">
+            Unpaid
+          </span>
+        }
+      />
+      <div className="space-y-2 bg-slate-100 p-2.5">
+        <div className="rounded-md bg-white p-2 text-center">
+          <ScreenLabel>Amount Due</ScreenLabel>
+          <p className="mt-0.5 text-[16px] font-bold tracking-tight text-slate-900">$2,450.00</p>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-md bg-white px-2 py-1.5">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-700">JH</span>
+          <div>
+            <p className="text-[8px] text-gray-500">Client</p>
+            <p className="text-[10px] font-semibold text-slate-900">John Homeowner</p>
+          </div>
+        </div>
+        <div className="flex h-7 items-center justify-center gap-1 rounded-md bg-blue-500 text-[11px] font-semibold text-white">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <rect x="1" y="4" width="22" height="16" rx="2" />
+            <line x1="1" y1="10" x2="23" y2="10" />
+          </svg>
+          Pay Now
+        </div>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function ProfitPhone() {
+  return (
+    <PhoneFrame>
+      <ScreenHeader title="Dashboard" />
+      <div className="space-y-2 bg-slate-100 p-2.5">
+        <div className="grid grid-cols-3 gap-1">
+          <div className="rounded-md bg-white p-1 text-center">
+            <p className="text-[11px] font-bold text-slate-900">3</p>
+            <p className="text-[7px] leading-tight text-gray-500">Active</p>
+          </div>
+          <div className="rounded-md bg-white p-1 text-center">
+            <p className="text-[10px] font-bold text-green-600">$1,240</p>
+            <p className="text-[7px] leading-tight text-gray-500">Est. Profit</p>
+          </div>
+          <div className="rounded-md bg-white p-1 text-center">
+            <p className="text-[11px] font-bold text-red-500">1</p>
+            <p className="text-[7px] leading-tight text-gray-500">Over Budget</p>
+          </div>
+        </div>
+        <div className="rounded-md bg-white p-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold text-slate-900">JOB-001</p>
+              <p className="text-[8px] text-gray-500">John Homeowner</p>
+            </div>
+            <span className="text-[10px] font-bold text-green-600">+$380</span>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-[8px] text-gray-500">
+            <span>Est. $2,450</span>
+            <span>Costs $2,070</span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-gray-200">
+            <div className="h-full w-[85%] rounded-full bg-blue-500" />
+          </div>
+        </div>
+      </div>
+    </PhoneFrame>
+  );
 }
 
 function Dashboard({ data }: { data: DashboardData }) {
