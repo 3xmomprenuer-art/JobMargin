@@ -19,7 +19,7 @@ import { sendEmail } from "~/lib/email";
 // Base URL used to build password-reset links. Overridable via APP_URL so the
 // deployed environment can point at its own public origin.
 const RESET_BASE_URL =
-  process.env.APP_URL || "https://site-rdtdy9kyl-4xmomprenuer.vercel.app";
+  process.env.APP_URL || "https://site-n3gnbjvdd-4xmomprenuer.vercel.app";
 
 // ---------------------------------------------------------------------------
 // Types
