@@ -19,10 +19,21 @@ const createCheckoutSession = createServerFn({ method: "POST" }).handler(
       return { url: null, error: "STRIPE_PRICE_ID not configured yet — check back soon!" };
     }
 
+    // Calculate remaining trial days so Stripe doesn't charge until the trial ends
+    const trialEnd =
+      new Date(user.trialStartedAt).getTime() + TRIAL_DURATION_MS;
+    const remainingDays = Math.max(
+      0,
+      Math.ceil((trialEnd - Date.now()) / (24 * 60 * 60 * 1000)),
+    );
+
     try {
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
+        ...(remainingDays > 0 && {
+          subscription_data: { trial_period_days: remainingDays },
+        }),
         success_url: `${process.env.APP_URL || "https://job-margin.com"}/pricing?success=true`,
         cancel_url: `${process.env.APP_URL || "https://job-margin.com"}/pricing?canceled=true`,
         customer_email: user.email,
@@ -40,6 +51,29 @@ const createCheckoutSession = createServerFn({ method: "POST" }).handler(
 // ---------------------------------------------------------------------------
 // Query params: ?success=true | ?canceled=true | ?trial_expired=true
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Server function: open Stripe Customer Portal for subscription management
+// ---------------------------------------------------------------------------
+
+const createPortalSession = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ url: string | null; error?: string }> => {
+    const user = await getCurrentUser();
+    if (!user || !user.stripeCustomerId) {
+      return { url: null, error: "No subscription found." };
+    }
+
+    try {
+      const session = await stripe.billingPortal.sessions.create({
+        customer: user.stripeCustomerId,
+        return_url: `${process.env.APP_URL || "https://job-margin.com"}/pricing`,
+      });
+      return { url: session.url };
+    } catch {
+      return { url: null, error: "Could not open subscription management. Please try again." };
+    }
+  },
+);
 
 const searchValidator = (search: Record<string, unknown>) => ({
   success: typeof search.success === "string" ? search.success : undefined,
@@ -80,6 +114,18 @@ function PricingPage() {
     setLoading(true);
     setError(null);
     const res = await createCheckoutSession();
+    if (res.url) {
+      window.location.href = res.url;
+    } else {
+      setError(res.error || "Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const handleManage = async () => {
+    setLoading(true);
+    setError(null);
+    const res = await createPortalSession();
     if (res.url) {
       window.location.href = res.url;
     } else {
@@ -194,10 +240,20 @@ function PricingPage() {
 
     if (user.subscriptionStatus === "active") {
       return (
-        <div className="rounded-xl bg-green-50 px-4 py-4 text-center">
-          <p className="text-sm font-semibold text-green-800">
-            You're subscribed — thank you!
-          </p>
+        <div className="space-y-3">
+          <div className="rounded-xl bg-green-50 px-4 py-4 text-center">
+            <p className="text-sm font-semibold text-green-800">
+              You're subscribed — thank you!
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleManage}
+            disabled={loading}
+            className="flex min-h-[48px] w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-6 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Opening..." : "Manage Subscription"}
+          </button>
         </div>
       );
     }
