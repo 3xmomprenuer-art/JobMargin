@@ -4,10 +4,13 @@ import {
   Outlet,
   Scripts,
   createRootRoute,
+  redirect,
   useLocation,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { getCurrentUser } from "~/lib/auth";
+import type { User } from "~/lib/auth";
 import appCss from "~/styles/app.css?url";
 
 const NAV_ITEMS = [
@@ -17,7 +20,26 @@ const NAV_ITEMS = [
   { to: "/jobs", label: "Jobs", icon: JobsIcon },
 ] as const;
 
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/logout",
+  "/share",
+  "/terms",
+  "/privacy",
+];
+
 export const Route = createRootRoute({
+  beforeLoad: async ({ location }) => {
+    const isPublic = PUBLIC_PATHS.some((p) =>
+      location.pathname.startsWith(p),
+    );
+    if (isPublic) return;
+
+    const user = await getCurrentUser();
+    if (!user) throw redirect({ to: "/login" });
+    return { user };
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -33,10 +55,13 @@ export const Route = createRootRoute({
 function RootComponent() {
   const loc = useLocation();
   const isSharePage = loc.pathname.startsWith("/share");
+  const ctx = Route.useRouteContext();
+  const user = ctx?.user;
 
   return (
     <RootDocument>
       <div className="flex min-h-dvh flex-col">
+        {!isSharePage && <UserBar user={user} />}
         <main className={isSharePage ? "flex-1" : "flex-1 pb-20"}>
           <Outlet />
         </main>
@@ -62,6 +87,24 @@ function RootDocument({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
+  );
+}
+
+function UserBar({ user }: { user: User | undefined }) {
+  if (!user) return null;
+  return (
+    <div className="border-b border-gray-100 bg-white">
+      <div className="mx-auto flex max-w-lg items-center justify-end gap-2 px-4 py-1.5 text-xs text-gray-500">
+        <span className="max-w-[40vw] truncate">{user.name}</span>
+        <span className="text-gray-300">•</span>
+        <Link
+          to="/logout"
+          className="font-medium text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline"
+        >
+          Log out
+        </Link>
+      </div>
+    </div>
   );
 }
 
