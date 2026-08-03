@@ -274,13 +274,12 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     try {
       const email = (data.email ?? "").trim().toLowerCase();
-      if (!email) return { success: true, resetLink: null };
+      if (!email) return { success: true };
 
       const rows = await sql`
         SELECT id, email FROM users WHERE email = ${email}
       `;
 
-      let resetLink: string | null = null;
       if (rows.length > 0) {
         const userId = String(rows[0].id);
         const token = crypto.randomUUID();
@@ -290,11 +289,11 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
           VALUES (${userId}, ${token}, NOW() + interval '1 hour')
         `;
 
-        resetLink = `${RESET_BASE_URL}/reset-password?token=${token}`;
+        const resetLink = `${RESET_BASE_URL}/reset-password?token=${token}`;
         await sendEmail({
           to: email,
           subject: "Reset your JobMargin password",
-          text:
+          body:
             "We received a request to reset your JobMargin password.\n\n" +
             `Open this link to choose a new password (valid for 1 hour):\n${resetLink}\n\n` +
             "If you didn't request this, you can safely ignore this email.",
@@ -302,12 +301,9 @@ export const requestPasswordReset = createServerFn({ method: "POST" })
       }
 
       // Always report success so we never reveal whether an email exists.
-      // `resetLink` is included only when the account exists — TEMPORARY
-      // bridge for manual delivery until email sending is wired up
-      // (see src/lib/email.ts). Remove once real email delivery lands.
-      return { success: true, resetLink };
+      return { success: true };
     } catch {
-      return { success: true, resetLink: null };
+      return { success: true };
     }
   });
 
