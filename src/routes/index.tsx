@@ -328,7 +328,10 @@ function LandingPage() {
             <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-6xl">Know Exactly How Much Every Job Makes You</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">The mobile-first tool for contractors who want to stop guessing and start knowing their real profit on every job.</p>
             <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-              <Link to="/signup" className="inline-flex min-h-[52px] items-center justify-center rounded-xl bg-blue-500 px-7 text-base font-semibold text-white shadow-lg shadow-blue-950/40 transition hover:bg-blue-400">Start Free</Link>
+              <div className="flex flex-col items-start gap-2">
+                <Link to="/signup" className="inline-flex min-h-[52px] items-center justify-center rounded-xl bg-blue-500 px-7 text-base font-semibold text-white shadow-lg shadow-blue-950/40 transition hover:bg-blue-400">Start Free Trial</Link>
+                <p className="text-xs text-slate-400">7 days free, then $15/month</p>
+              </div>
               <Link to="/login" className="text-sm font-medium text-slate-300 underline-offset-4 hover:text-white hover:underline">Already have an account? Log in</Link>
             </div>
           </div>
@@ -356,7 +359,7 @@ function LandingPage() {
           <p className="mt-4 text-base leading-7 text-slate-600">Plumbers, electricians, landscapers, handymen, and more. JobMargin keeps the important numbers close at hand, whether you’re on a job site or back at the shop.</p>
         </div>
       </section>
-      <section className="px-4 py-14 text-center"><h2 className="text-2xl font-bold text-slate-900">Stop guessing. Start knowing.</h2><Link to="/signup" className="mt-6 inline-flex min-h-[52px] items-center rounded-xl bg-indigo-600 px-7 font-semibold text-white hover:bg-indigo-500">Start Free</Link></section>
+      <section className="px-4 py-14 text-center"><h2 className="text-2xl font-bold text-slate-900">Stop guessing. Start knowing.</h2><Link to="/signup" className="mt-6 inline-flex min-h-[52px] items-center rounded-xl bg-indigo-600 px-7 font-semibold text-white hover:bg-indigo-500">Start Free Trial</Link><p className="mt-3 text-xs text-gray-400">7 days free, then $15/month</p></section>
     </div>
   );
 }
