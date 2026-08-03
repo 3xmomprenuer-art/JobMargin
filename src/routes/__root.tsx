@@ -36,6 +36,9 @@ export const Route = createRootRoute({
     const isPublic = PUBLIC_PATHS.some((p) =>
       location.pathname.startsWith(p),
     );
+    if (location.pathname === "/") {
+      return { user: await getCurrentUser() };
+    }
     if (isPublic) return;
 
     const user = await getCurrentUser();
@@ -46,7 +49,22 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "JobMargin" },
+      { title: "JobMargin — Job Profit Tracking for Contractors" },
+      {
+        name: "description",
+        content:
+          "Mobile-first job estimation, cost tracking, and invoicing for solo contractors. Know your real profit on every job.",
+      },
+      {
+        property: "og:title",
+        content: "JobMargin — Job Profit Tracking for Contractors",
+      },
+      {
+        property: "og:description",
+        content:
+          "Mobile-first job estimation, cost tracking, and invoicing for solo contractors. Know your real profit on every job.",
+      },
+      { property: "og:type", content: "website" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
@@ -64,13 +82,13 @@ function RootComponent() {
     <RootDocument>
       <div className="flex min-h-dvh flex-col">
         {!isSharePage && <UserBar user={user} />}
-        <main className={isSharePage ? "flex-1" : "flex-1 pb-20"}>
+        <main className={isSharePage ? "flex-1" : user ? "flex-1 pb-20" : "flex-1"}>
           <Outlet />
         </main>
         {!isSharePage && (
           <>
             <AppFooter />
-            <BottomNav />
+            {user && <BottomNav />}
           </>
         )}
       </div>
