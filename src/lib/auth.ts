@@ -12,7 +12,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getCookie, setCookie, deleteCookie } from "@tanstack/react-start/server";
 import { redirect } from "@tanstack/react-router";
-import bcrypt from "bcryptjs";
+import { hash, compare } from "bcryptjs";
 import { sql } from "~/db";
 
 // ---------------------------------------------------------------------------
@@ -36,14 +36,14 @@ export interface AuthResult {
 // ---------------------------------------------------------------------------
 
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 10);
+  return hash(plain, 10);
 }
 
 export async function verifyPassword(
   plain: string,
   hash: string,
 ): Promise<boolean> {
-  return bcrypt.compare(plain, hash);
+  return compare(plain, hash);
 }
 
 // ---------------------------------------------------------------------------
