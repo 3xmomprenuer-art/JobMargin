@@ -49,9 +49,10 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
   try {
     // 1. Stats
     const statsRows = await sql`
-      WITH active_jobs AS (
+      WITH monthly_jobs AS (
         SELECT
           j.id,
+          j.status,
           j.estimated_total,
           COALESCE(
             (SELECT SUM(cost) FROM job_materials WHERE job_id = j.id), 0
@@ -61,7 +62,7 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           ) AS labor_sum
         FROM jobs j
         WHERE j.user_id = ${userId}
-          AND j.status IN ('not_started', 'in_progress')
+          AND j.created_at >= date_trunc('month', CURRENT_DATE)
       ),
       completed_month AS (
         SELECT
@@ -79,10 +80,13 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           AND j.updated_at < date_trunc('month', CURRENT_DATE) + interval '1 month'
       )
       SELECT
-        (SELECT COUNT(*) FROM active_jobs) AS active_jobs,
-        (SELECT COUNT(*) FROM active_jobs WHERE estimated_total IS NOT NULL AND (materials_sum + labor_sum) > estimated_total) AS over_budget,
+        (SELECT COUNT(*) FROM monthly_jobs WHERE status IN ('not_started', 'in_progress')) AS active_jobs,
+        (SELECT COUNT(*) FROM monthly_jobs WHERE estimated_total IS NOT NULL AND (materials_sum + labor_sum) > estimated_total) AS over_budget,
         COALESCE(
           (SELECT SUM(COALESCE(estimated_total, 0) - (materials_sum + labor_sum)) FROM completed_month),
+          0
+        ) + COALESCE(
+          (SELECT SUM(COALESCE(estimated_total, 0) - (materials_sum + labor_sum)) FROM monthly_jobs WHERE status = 'in_progress'),
           0
         ) AS monthly_profit
     `;
@@ -398,7 +402,7 @@ function Dashboard({ data }: { data: DashboardData }) {
           color={stats.overBudget > 0 ? "red" : "green"}
         />
         <StatCard
-          label="This Month's Profit"
+          label="Month Profit (Est.)"
           value={formatCurrencyCompact(stats.monthlyProfit)}
           color={stats.monthlyProfit >= 0 ? "green" : "red"}
           spanFull
