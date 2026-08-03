@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,6 +24,9 @@ interface JobRow {
 // ---------------------------------------------------------------------------
 
 const getJobs = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  const userId = user.id;
   try {
     const rows = await sql`
       SELECT
@@ -42,6 +46,7 @@ const getJobs = createServerFn({ method: "GET" }).handler(async () => {
         ) AS labor_sum
       FROM jobs j
       JOIN clients c ON j.client_id = c.id
+      WHERE j.user_id = ${userId}
       ORDER BY j.created_at DESC
     `;
     return rows.map((r) => ({

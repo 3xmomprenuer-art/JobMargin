@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,6 +43,9 @@ interface DashboardData {
 // ---------------------------------------------------------------------------
 
 const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Unauthorized");
+  const userId = user.id;
   try {
     // 1. Stats
     const statsRows = await sql`
@@ -56,7 +60,8 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
             (SELECT SUM(total_cost) FROM job_time_entries WHERE job_id = j.id), 0
           ) AS labor_sum
         FROM jobs j
-        WHERE j.status IN ('not_started', 'in_progress')
+        WHERE j.user_id = ${userId}
+          AND j.status IN ('not_started', 'in_progress')
       ),
       completed_month AS (
         SELECT
@@ -68,7 +73,8 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
             (SELECT SUM(total_cost) FROM job_time_entries WHERE job_id = j.id), 0
           ) AS labor_sum
         FROM jobs j
-        WHERE j.status = 'complete'
+        WHERE j.user_id = ${userId}
+          AND j.status = 'complete'
           AND j.updated_at >= date_trunc('month', CURRENT_DATE)
           AND j.updated_at < date_trunc('month', CURRENT_DATE) + interval '1 month'
       )
@@ -104,7 +110,8 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
         ) AS labor_sum
       FROM jobs j
       JOIN clients c ON j.client_id = c.id
-      WHERE j.status IN ('not_started', 'in_progress')
+      WHERE j.user_id = ${userId}
+        AND j.status IN ('not_started', 'in_progress')
       ORDER BY j.created_at DESC
       LIMIT 5
     `;
@@ -131,7 +138,8 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           ('Job ' || j.job_number || ' marked complete')::text AS description,
           j.updated_at AS event_time
         FROM jobs j
-        WHERE j.status = 'complete'
+        WHERE j.user_id = ${userId}
+          AND j.status = 'complete'
 
         UNION ALL
 
@@ -142,6 +150,7 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           ('Job ' || j.job_number || ' created')::text AS description,
           j.created_at AS event_time
         FROM jobs j
+        WHERE j.user_id = ${userId}
 
         UNION ALL
 
@@ -153,6 +162,7 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           jm.purchased_at AS event_time
         FROM job_materials jm
         JOIN jobs j ON jm.job_id = j.id
+        WHERE j.user_id = ${userId}
 
         UNION ALL
 
@@ -164,6 +174,7 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           jte.logged_at AS event_time
         FROM job_time_entries jte
         JOIN jobs j ON jte.job_id = j.id
+        WHERE j.user_id = ${userId}
 
         UNION ALL
 
@@ -174,7 +185,8 @@ const getDashboardData = createServerFn({ method: "GET" }).handler(async () => {
           ('Estimate ' || e.estimate_number || ' accepted')::text AS description,
           e.updated_at AS event_time
         FROM estimates e
-        WHERE e.status = 'accepted'
+        WHERE e.user_id = ${userId}
+          AND e.status = 'accepted'
       ) AS events
       ORDER BY event_time DESC
       LIMIT 10

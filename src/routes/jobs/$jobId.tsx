@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { sql } from "~/db";
+import { getCurrentUser } from "~/lib/auth";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +79,9 @@ interface Invoice {
 const getJob = createServerFn({ method: "GET" })
   .validator((data: unknown) => data as { jobId: string })
   .handler(async ({ data: { jobId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
       const jobRows = await sql`
         SELECT
@@ -90,7 +94,7 @@ const getJob = createServerFn({ method: "GET" })
         FROM jobs j
         JOIN clients c ON j.client_id = c.id
         LEFT JOIN estimates e ON j.estimate_id = e.id
-        WHERE j.id = ${jobId}
+        WHERE j.id = ${jobId} AND j.user_id = ${userId}
       `;
       if (jobRows.length === 0) return null;
       const job = jobRows[0];
@@ -157,7 +161,7 @@ const updateJobStatus = createServerFn({ method: "POST" })
   .handler(async ({ data: { jobId, status } }) => {
     await sql`
       UPDATE jobs SET status = ${status}, updated_at = NOW()
-      WHERE id = ${jobId}
+      WHERE id = ${jobId} AND user_id = ${userId}
     `;
     return { success: true };
   });
@@ -174,6 +178,11 @@ const addMaterial = createServerFn({ method: "POST" })
     return { ...d, description: d.description.trim(), receipt_url: d.receipt_url || null };
   })
   .handler(async ({ data }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
+    const owned = await sql`SELECT id FROM jobs WHERE id = ${data.jobId} AND user_id = ${userId}`;
+    if (owned.length === 0) throw new Error("Not found");
     await sql`
       INSERT INTO job_materials (job_id, description, cost, receipt_url)
       VALUES (${data.jobId}, ${data.description}, ${data.cost}, ${data.receipt_url})
@@ -185,7 +194,7 @@ const addMaterial = createServerFn({ method: "POST" })
     `;
     await sql`
       UPDATE jobs SET actual_materials_cost = ${Number(sumRows[0].total)}, updated_at = NOW()
-      WHERE id = ${data.jobId}
+      WHERE id = ${data.jobId} AND user_id = ${userId}
     `;
 
     return { success: true };
@@ -203,6 +212,11 @@ const addTimeEntry = createServerFn({ method: "POST" })
     return { ...d, notes: d.notes || null };
   })
   .handler(async ({ data }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
+    const owned = await sql`SELECT id FROM jobs WHERE id = ${data.jobId} AND user_id = ${userId}`;
+    if (owned.length === 0) throw new Error("Not found");
     const totalCost = data.hours * data.hourly_rate;
 
     await sql`
@@ -222,7 +236,7 @@ const addTimeEntry = createServerFn({ method: "POST" })
         actual_labor_cost = ${Number(sumRows[0].total_labor)},
         actual_labor_hours = ${Number(sumRows[0].total_hours)},
         updated_at = NOW()
-      WHERE id = ${data.jobId}
+      WHERE id = ${data.jobId} AND user_id = ${userId}
     `;
 
     return { success: true };
@@ -231,6 +245,9 @@ const addTimeEntry = createServerFn({ method: "POST" })
 const getInvoices = createServerFn({ method: "GET" })
   .validator((data: unknown) => data as { jobId: string })
   .handler(async ({ data: { jobId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
       const rows = await sql`
         SELECT id, job_id, invoice_number, description, amount_cents,
@@ -239,6 +256,7 @@ const getInvoices = createServerFn({ method: "GET" })
                needs_payment_link
         FROM invoices
         WHERE job_id = ${jobId}
+          AND job_id IN (SELECT id FROM jobs WHERE user_id = ${userId})
         ORDER BY created_at DESC
       `;
       return rows.map((r) => ({
@@ -285,9 +303,12 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data: { jobId, description, amountCents, customerEmail } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     // Generate next invoice number (INV-001 format)
     const countRows = await sql`
-      SELECT COUNT(*)::int AS cnt FROM invoices
+      SELECT COUNT(*)::int AS cnt FROM invoices WHERE user_id = ${userId}
     `;
     const nextNum = Number(countRows[0].cnt) + 1;
     const invoiceNumber = `INV-${String(nextNum).padStart(3, "0")}`;
@@ -295,8 +316,9 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
 
     const rows = await sql`
-      INSERT INTO invoices (job_id, invoice_number, description, amount_cents, customer_email, issued_at, needs_payment_link)
-      VALUES (${jobId}, ${invoiceNumber}, ${description}, ${amountCents}, ${customerEmail}, ${now}, true)
+      INSERT INTO invoices (user_id, job_id, invoice_number, description, amount_cents, customer_email, issued_at, needs_payment_link)
+      SELECT ${userId}, ${jobId}, ${invoiceNumber}, ${description}, ${amountCents}, ${customerEmail}, ${now}, true
+      WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ${jobId} AND user_id = ${userId})
       RETURNING id, job_id, invoice_number, description, amount_cents,
                 amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
                 customer_email, issued_at, paid_at, needs_payment_link, created_at, updated_at
@@ -327,6 +349,9 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
 const markInvoicePaid = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as { invoiceId: string })
   .handler(async ({ data: { invoiceId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
       const rows = await sql`
         UPDATE invoices
@@ -335,7 +360,7 @@ const markInvoicePaid = createServerFn({ method: "POST" })
             amount_paid_cents = amount_cents,
             needs_payment_link = false,
             updated_at = NOW()
-        WHERE id = ${invoiceId}
+        WHERE id = ${invoiceId} AND user_id = ${userId}
         RETURNING id, status, paid_at, amount_paid_cents, needs_payment_link
       `;
       if (rows.length === 0) return null;
@@ -355,13 +380,16 @@ const markInvoicePaid = createServerFn({ method: "POST" })
 const cancelInvoice = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as { invoiceId: string })
   .handler(async ({ data: { invoiceId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
       const rows = await sql`
         UPDATE invoices
         SET status = 'cancelled',
             needs_payment_link = false,
             updated_at = NOW()
-        WHERE id = ${invoiceId} AND status = 'unpaid'
+        WHERE id = ${invoiceId} AND user_id = ${userId} AND status = 'unpaid'
         RETURNING id, status, needs_payment_link
       `;
       if (rows.length === 0) return null;
@@ -379,6 +407,9 @@ const cancelInvoice = createServerFn({ method: "POST" })
 const getInvoice = createServerFn({ method: "GET" })
   .validator((data: unknown) => data as { invoiceId: string })
   .handler(async ({ data: { invoiceId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    const userId = user.id;
     try {
       const rows = await sql`
         SELECT i.id, i.job_id, i.invoice_number, i.description, i.amount_cents,
@@ -388,7 +419,7 @@ const getInvoice = createServerFn({ method: "GET" })
         FROM invoices i
         JOIN jobs j ON i.job_id = j.id
         JOIN clients c ON j.client_id = c.id
-        WHERE i.id = ${invoiceId}
+        WHERE i.id = ${invoiceId} AND j.user_id = ${userId}
       `;
       if (rows.length === 0) return null;
       const r = rows[0];
@@ -424,6 +455,9 @@ const getInvoice = createServerFn({ method: "GET" })
       return { invoiceId: d.invoiceId, paymentLink: d.paymentLink.trim() };
     })
     .handler(async ({ data: { invoiceId, paymentLink } }) => {
+      const user = await getCurrentUser();
+      if (!user) throw new Error("Unauthorized");
+      const userId = user.id;
       try {
         const rows = await sql`
           UPDATE invoices
@@ -431,7 +465,7 @@ const getInvoice = createServerFn({ method: "GET" })
               needs_payment_link = false,
               status = 'issued',
               updated_at = NOW()
-          WHERE id = ${invoiceId}
+          WHERE id = ${invoiceId} AND user_id = ${userId}
           RETURNING id, job_id, invoice_number, description, amount_cents,
                     amount_paid_cents, status, stripe_invoice_id, stripe_payment_link,
                     customer_email, issued_at, paid_at, needs_payment_link, created_at, updated_at
