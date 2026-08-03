@@ -30,6 +30,7 @@ const PUBLIC_PATHS = [
   "/share",
   "/terms",
   "/privacy",
+  "/blog",
 ];
 
 // Trial/subscription enforcement — redirects users whose trial has expired or
