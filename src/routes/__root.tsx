@@ -32,6 +32,9 @@ const PUBLIC_PATHS = [
   "/privacy",
   "/blog",
   "/profit-calculator",
+  // Tool routes are all public lead magnets. Keep the namespace entry here so
+  // newly added tools cannot accidentally fall through to the auth guard.
+  "/tools",
   "/tools/estimate-vs-actual-spreadsheet",
   "/tools/markup-margin-converter",
   "/tools/labor-burden-calculator",
