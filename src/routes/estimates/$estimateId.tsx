@@ -304,9 +304,7 @@ function EstimateDetailPage() {
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
           Client
         </h2>
-        <p className="text-base font-semibold text-gray-900">
-          {estimate.client_name}
-        </p>
+        <Link to="/clients/$clientId" params={{ clientId: estimate.client_id }} className="text-base font-semibold text-indigo-600 hover:underline">{estimate.client_name}</Link>
         {(estimate.client_email || estimate.client_phone || estimate.client_address) && (
           <div className="mt-1 space-y-0.5 text-sm text-gray-500">
             {estimate.client_email && <p>{estimate.client_email}</p>}

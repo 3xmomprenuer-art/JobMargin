@@ -703,7 +703,7 @@ function JobDetailPage() {
               {job.job_number}
             </h1>
             <p className="text-sm text-gray-500">
-              {job.client_name} · {formatDate(job.created_at)}
+              <Link to="/clients/$clientId" params={{ clientId: job.client_id }} className="text-indigo-600 hover:underline">{job.client_name}</Link> · {formatDate(job.created_at)}
             </p>
           </div>
           <StatusBadge status={job.status} large />

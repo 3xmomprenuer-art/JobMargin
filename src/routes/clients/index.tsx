@@ -123,7 +123,7 @@ function ClientRow({ client }: { client: Client }) {
 
   return (
     <li className="flex min-h-[60px] flex-col justify-center gap-0.5 px-4 py-3 hover:bg-gray-50 transition-colors">
-      <span className="text-sm font-semibold text-gray-900">{client.name}</span>
+      <Link to="/clients/$clientId" params={{ clientId: client.id }} className="text-sm font-semibold text-indigo-600 hover:underline">{client.name}</Link>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
         <span>{contact}</span>
         {client.address && (
