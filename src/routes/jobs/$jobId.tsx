@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { sql } from "~/db";
 import { getCurrentUser } from "~/lib/auth";
+import { stripe } from "~/lib/stripe";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -346,6 +347,29 @@ const createInvoiceForJob = createServerFn({ method: "POST" })
     } as Invoice;
   });
 
+const createInvoicePaymentLink = createServerFn({ method: "POST" })
+  .validator((data: unknown) => data as { invoiceId: string })
+  .handler(async ({ data: { invoiceId } }) => {
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+    try {
+      const rows = await sql`SELECT id, invoice_number, description, amount_cents, stripe_payment_link FROM invoices WHERE id = ${invoiceId} AND user_id = ${user.id} AND status = 'unpaid'`;
+      if (!rows.length) return { error: "Invoice not found or is no longer unpaid." };
+      const invoice = rows[0];
+      if (invoice.stripe_payment_link) return { paymentLink: String(invoice.stripe_payment_link) };
+      const baseUrl = process.env.APP_URL || "https://job-margin.com";
+      const paymentLink = await stripe.paymentLinks.create({
+        line_items: [{ price_data: { currency: "usd", product_data: { name: String(invoice.description) }, unit_amount: Number(invoice.amount_cents) }, quantity: 1 }],
+        after_completion: { type: "redirect", redirect: { url: `${baseUrl}/share/invoice/${invoiceId}?paid=true` } },
+        metadata: { invoice_id: String(invoice.id), invoice_number: String(invoice.invoice_number) },
+      });
+      const saved = await sql`UPDATE invoices SET stripe_payment_link = ${paymentLink.url}, needs_payment_link = false, updated_at = NOW() WHERE id = ${invoiceId} AND user_id = ${user.id} RETURNING stripe_payment_link`;
+      return { paymentLink: String(saved[0].stripe_payment_link) };
+    } catch (error) {
+      console.error("Stripe payment link creation failed", error);
+      return { error: "Stripe couldn't create the payment link. Check your Stripe account and try again." };
+    }
+  });
 const markInvoicePaid = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as { invoiceId: string })
   .handler(async ({ data: { invoiceId } }) => {
@@ -463,7 +487,7 @@ const getInvoice = createServerFn({ method: "GET" })
           UPDATE invoices
           SET stripe_payment_link = ${paymentLink},
               needs_payment_link = false,
-              status = 'issued',
+              status = 'unpaid',
               updated_at = NOW()
           WHERE id = ${invoiceId} AND user_id = ${userId}
           RETURNING id, job_id, invoice_number, description, amount_cents,
@@ -1172,8 +1196,17 @@ function InvoicesSection({
           customerEmail: customerEmail || undefined,
         },
       });
-      setInvoices((prev) => [newInvoice, ...prev]);
-      setSuccessMsg("Invoice " + newInvoice.invoice_number + " created!");
+      let createdInvoice = newInvoice;
+      // Generate the payment link immediately; if Stripe is unavailable, keep the
+      // invoice and expose the manual paste fallback in the card.
+      try {
+        const payment = await createInvoicePaymentLink({ data: { invoiceId: newInvoice.id } });
+        if (payment.paymentLink) {
+          createdInvoice = { ...newInvoice, stripe_payment_link: payment.paymentLink, needs_payment_link: false };
+        }
+      } catch { /* The invoice remains usable with the manual fallback. */ }
+      setInvoices((prev) => [createdInvoice, ...prev]);
+      setSuccessMsg("Invoice " + createdInvoice.invoice_number + " created!");
       setShowForm(false);
       setDescription("");
       setAmount("");
@@ -1319,7 +1352,7 @@ function InvoicesSection({
       {/* Pending payment links banner */}
       {invoices.some((inv) => inv.needs_payment_link && !inv.stripe_payment_link && inv.status === 'unpaid') && (
         <div className="mb-3 rounded-lg bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-700 border border-blue-200">
-            Generate a Stripe payment link and paste it below.
+            Create a secure Stripe payment link automatically, or paste one manually below.
         </div>
       )}
       {loading ? (
@@ -1377,11 +1410,7 @@ function InvoicesSection({
               )}
 
               {inv.status === 'unpaid' && !inv.stripe_payment_link && inv.needs_payment_link && (
-                <PaymentLinkInput invoiceId={inv.id} onLinkSet={(updated) => {
-                  setInvoices((prev) =>
-                    prev.map((i) => i.id === inv.id ? { ...i, ...updated } : i)
-                  );
-                }} />
+                <PaymentLinkActions invoiceId={inv.id} onLinkSet={(link) => setInvoices((prev) => prev.map((i) => i.id === inv.id ? { ...i, stripe_payment_link: link, needs_payment_link: false } : i))} />
               )}
 
               {inv.status === 'unpaid' && (
@@ -1616,6 +1645,23 @@ function StatusBadge({
 // Payment Link Input (manual paste)
 // ---------------------------------------------------------------------------
 
+function PaymentLinkActions({ invoiceId, onLinkSet }: { invoiceId: string; onLinkSet: (link: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const create = async () => {
+    setBusy(true); setError(null);
+    try {
+      const result = await createInvoicePaymentLink({ data: { invoiceId } });
+      if (result.paymentLink) onLinkSet(result.paymentLink); else setError(result.error || "Unable to create link.");
+    } catch { setError("Unable to create payment link. Please try again."); }
+    finally { setBusy(false); }
+  };
+  return <div className="mt-3 space-y-2">
+    <button type="button" onClick={create} disabled={busy} className="min-h-[44px] w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">{busy ? "Creating secure link..." : "Create Payment Link"}</button>
+    {error && <p className="text-xs text-red-600">{error}</p>}
+    <PaymentLinkInput invoiceId={invoiceId} onLinkSet={onLinkSetObj => onLinkSet(String(onLinkSetObj.stripe_payment_link || ""))} />
+  </div>;
+}
 function PaymentLinkInput({ invoiceId, onLinkSet }: { invoiceId: string; onLinkSet: (updated: Partial<Invoice>) => void }) {
   const [link, setLink] = useState("");
   const [setting, setSetting] = useState(false);
