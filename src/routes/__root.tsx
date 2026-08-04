@@ -36,6 +36,7 @@ const PUBLIC_PATHS = [
   "/tools/markup-margin-converter",
   "/tools/labor-burden-calculator",
   "/tools/change-order-generator",
+  "/tools/service-call-pricing",
   "/api/estimate-vs-actual-download",
   "/contact",
 ];
