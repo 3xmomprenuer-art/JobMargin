@@ -324,6 +324,7 @@ function LandingPage() {
           <div className="mb-14 flex items-center justify-between">
             <Link to="/" className="text-lg font-bold tracking-tight">Job<span className="text-blue-400">Margin</span></Link>
             <div className="flex items-center gap-1">
+              <Link to="/profit-calculator" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Calculator</Link>
               <Link to="/pricing" search={{ success: undefined, canceled: undefined, trial_expired: undefined }} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Pricing</Link>
               <Link to="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Log in</Link>
             </div>
