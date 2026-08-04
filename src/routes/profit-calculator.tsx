@@ -357,6 +357,9 @@ function ProfitCalculatorPage() {
           <p className="mt-4 text-sm text-slate-400">
             7-day free trial, then $15/month
           </p>
+          <p className="mt-5 text-sm text-slate-300">
+            Prefer a spreadsheet? <Link to="/tools/estimate-vs-actual-spreadsheet" className="font-semibold text-blue-300 underline underline-offset-2 hover:text-blue-200">Download the free estimate vs. actual template</Link>.
+          </p>
         </section>
       </main>
     </div>
