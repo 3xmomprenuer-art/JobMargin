@@ -33,6 +33,7 @@ const PUBLIC_PATHS = [
   "/blog",
   "/profit-calculator",
   "/tools/estimate-vs-actual-spreadsheet",
+  "/tools/markup-margin-converter",
   "/api/estimate-vs-actual-download",
   "/contact",
 ];

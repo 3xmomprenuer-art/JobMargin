@@ -114,7 +114,7 @@ Before sending an estimate, write down four numbers: every direct cost, the over
 
 Use markup when you need a quick way to adjust a known cost. Use margin when you are deciding whether the entire job pays enough. Always translate one to the other before you quote: a 20% markup is 16.7% margin; a 20% margin requires 25% markup.
 
-[Try different scenarios with our free calculator](/profit-calculator) to see how materials, labor, subs, overhead, and fees change your result. You can also [download the free estimate vs. actual spreadsheet](/tools/estimate-vs-actual-spreadsheet) and compare what you thought a job would cost with what it actually cost.
+[Try our free Markup ↔ Margin Converter](/tools/markup-margin-converter) or [different scenarios with our profit calculator](/profit-calculator) to see how materials, labor, subs, overhead, and fees change your result. You can also [download the free estimate vs. actual spreadsheet](/tools/estimate-vs-actual-spreadsheet) and compare what you thought a job would cost with what it actually cost.
 
 The goal is not perfect math on a clipboard. It is a price that covers the work, pays for the business, and leaves a profit you can count on. Check the margin before you start, then check it again when you finish.
 
