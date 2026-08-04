@@ -16,7 +16,7 @@ function BlogIndex() {
     <div className="min-h-dvh bg-slate-950 text-white">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-6 sm:px-6">
         <Link to="/" className="text-lg font-bold tracking-tight">Job<span className="text-blue-400">Margin</span></Link>
-        <nav className="flex items-center gap-1"><Link to="/profit-calculator" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Calculator</Link><Link to="/pricing" search={{ success: undefined, canceled: undefined, trial_expired: undefined }} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Pricing</Link><Link to="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Log in</Link></nav>
+        <nav className="flex items-center gap-1"><Link to="/profit-calculator" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Calculator</Link><Link to="/pricing" search={{ success: undefined, canceled: undefined, trial_expired: undefined }} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Pricing</Link><Link to="/contact" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Contact</Link><Link to="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-white/10 hover:text-white">Log in</Link></nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 pb-20 pt-12 sm:px-6 sm:pt-20">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-300">The JobMargin field notes</p>
